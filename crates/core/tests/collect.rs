@@ -209,7 +209,7 @@ fn the_report_for_the_mock_account() {
     let os = all.iter().find(|f| f.label == "Object Storage").unwrap();
     assert_eq!(
         os.detail,
-        "Standard 3.0 GB of 10, Archive 0.0 GB of 10 (1 buckets)"
+        "Standard 3.0 GB of 10, Archive 0.0 GB of 10 (1 bucket)"
     );
     let adb = all
         .iter()

@@ -452,8 +452,8 @@ fn object_storage(s: &Snapshot) -> Finding {
             grade(std, lim).max(grade(arch, lim)),
             label,
             format!(
-                "Standard {std:.1} GB of {lim}, Archive {arch:.1} GB of {lim} ({} buckets)",
-                buckets.len()
+                "Standard {std:.1} GB of {lim}, Archive {arch:.1} GB of {lim} ({})",
+                plural(buckets.len(), "bucket")
             ),
         )
     } else {
@@ -462,7 +462,10 @@ fn object_storage(s: &Snapshot) -> Finding {
         Finding::new(
             grade(total, lim),
             label,
-            format!("{total:.1} GB of {lim} ({} buckets)", buckets.len()),
+            format!(
+                "{total:.1} GB of {lim} ({})",
+                plural(buckets.len(), "bucket")
+            ),
         )
     }
 }
@@ -663,4 +666,13 @@ fn safety_net(s: &Snapshot) -> Vec<Finding> {
             .with_items(vec![HINT.into()]),
         },
     }]
+}
+
+/// `1 bucket`, `2 buckets`.
+fn plural(n: usize, word: &str) -> String {
+    if n == 1 {
+        format!("{n} {word}")
+    } else {
+        format!("{n} {word}s")
+    }
 }

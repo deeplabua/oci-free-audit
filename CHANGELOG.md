@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1 — 2026-11-10
+
+- README: a GIF of a real run against a local mock (`assets/demo/`) instead of sample text.
+- README: icon and badges (CI, crates.io, license, stars).
+- README: a Support section — star the repo, or buy me a coffee.
+- README: one command per code block, so each copies on its own.
+
 ## 0.2.0 — 2026-11-10
 
 - Every subscribed region, not just the home one. Compute and block volumes outside the home

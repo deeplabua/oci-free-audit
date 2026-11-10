@@ -1,4 +1,11 @@
+<p align="center"><img src=".github/oci-free-audit-256.png" width="128" height="128" alt="oci-free-audit icon"></p>
+
 # oci-free-audit
+
+[![CI](https://img.shields.io/github/actions/workflow/status/deeplabua/oci-free-audit/ci.yml?branch=main&logo=github&label=CI)](https://github.com/deeplabua/oci-free-audit/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/oci-free-audit?label=crates.io&color=e37933)](https://crates.io/crates/oci-free-audit)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/deeplabua/oci-free-audit?style=flat&logo=github&label=Star)](https://github.com/deeplabua/oci-free-audit/stargazers)
 
 **Will Oracle charge me?** A read-only check of your Oracle Cloud (OCI) tenancy against the
 Always Free limits — and against what you were actually billed.
@@ -11,28 +18,9 @@ Part of [DeepLab](https://deeplab.tools) — small, sharp tools that run locally
 [oci-arm-catcher](https://github.com/deeplabua/oci-arm-catcher): catch a free ARM instance,
 then make sure it stays free.
 
-```
-oci-free-audit · tenancy ****xyz · PAYG · home region eu-amsterdam-1 · since 2026-10-01 · limits as of 2026-11-10
+![oci-free-audit on a made-up PAYG tenancy: everything free, one warning — no budget alert](assets/demo.gif)
 
-COST  (data up to 2026-11-09)
-  ✓ November 2026 to date      0.00 EUR
-  ✓ October 2026               0.00 EUR
-  ✓ Outbound data this month   1.3 GB of 10 TB
-
-COMPUTE
-  ✓ A1.Flex total   4 OCPU / 24 GB, over 2 OCPU / 12 GB, but free on this account: A1 billed 0.00 EUR since 2026-10-01
-      arm-free-1: 4 OCPU / 24 GB
-  ✓ E2.1.Micro      1 of 2
-
-STORAGE
-  ✓ Block volumes    94 GB of 200 (boot 94, block 0)
-  ✓ Volume backups   0 of 5
-
-SAFETY NET
-  ✓ Budget alert   "zero-spend" with 1 alert rule(s)
-
-Result: all free
-```
+<sub>Recorded against a local mock of the OCI API (`assets/demo/`); the tenancy and its resources are made up.</sub>
 
 ## Why
 
@@ -59,13 +47,40 @@ It uses the API key in `~/.oci/config` — the same one the OCI CLI and
 
 ## Use
 
+The report:
+
 ```sh
-oci-free-audit                    # the report
-oci-free-audit --json             # for scripts and cron
-oci-free-audit --since 2026-09-01 # audit a longer period (default: since the 1st of last month)
-oci-free-audit --a1-limit 4/24    # treat 4 OCPU / 24 GB of A1 as free instead of asking the bill
-oci-free-audit --show-ids         # don't mask the tenancy name and OCID
-oci-free-audit --profile OTHER    # another profile in ~/.oci/config
+oci-free-audit
+```
+
+As JSON, for scripts and cron:
+
+```sh
+oci-free-audit --json
+```
+
+A longer period (the default starts on the 1st of last month):
+
+```sh
+oci-free-audit --since 2026-09-01
+```
+
+Treat 4 OCPU / 24 GB of A1 as free instead of asking the bill:
+
+```sh
+oci-free-audit --a1-limit 4/24
+```
+
+Don't mask the tenancy name and OCID:
+
+```sh
+oci-free-audit --show-ids
+```
+
+Another profile in `~/.oci/config`:
+
+```sh
+oci-free-audit --profile OTHER
 ```
 
 Exit codes: `0` all free, `1` warnings, `2` a charge or a limit exceeded, `3` could not run
@@ -119,6 +134,15 @@ instead. Add `Allow group <your-group> to read instances in tenancy` to see inst
 
 Vault key versions and secrets counts, Email Delivery and Notifications volumes, the 50,000
 Object Storage requests a month, the trial period, notifications. See [`CHANGELOG.md`](CHANGELOG.md).
+
+## Support
+
+If `oci-free-audit` caught a charge before it grew, two things help a lot:
+
+- ⭐ **[Star the repo](https://github.com/deeplabua/oci-free-audit)** — it's how other people worried about a surprise Oracle bill find it.
+- ☕ **[Buy me a coffee](https://send.monobank.ua/jar/4Hq7auheaa)** — if it saved you some time and you feel like it.
+
+Both are completely optional. The tool is free and always will be.
 
 ## License
 
