@@ -1,0 +1,43 @@
+# ── Secrets / local config ────────────────────────────────────────────────────
+# Never commit your real config. Only .env.example is tracked.
+.env
+*.env
+!.env.example
+
+# SSH keys / OCI key material
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+oci_api_key*
+~/.oci/
+# Throwaway key for the mock-API tests; not tied to any account.
+!crates/core/tests/fixtures/*.pem
+
+# ── Logs / runtime output ─────────────────────────────────────────────────────
+*.log
+logs/
+nohup.out
+
+# ── AI assistant / editor scratch files ──────────────────────────────────────
+.claude/
+.cursor/
+.cursorrules
+.aider*
+.windsurfrules
+
+# ── OS / editor junk ─────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Rust build output
+target/

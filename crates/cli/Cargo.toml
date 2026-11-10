@@ -1,0 +1,23 @@
+[package]
+name = "oci-free-audit"
+description = "Will Oracle charge me? A read-only check of your OCI tenancy against the Always Free limits and your actual bill"
+keywords = ["oci", "oracle-cloud", "free-tier", "billing", "audit"]
+categories = ["command-line-utilities"]
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[[bin]]
+name = "oci-free-audit"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+oci-free-audit-core.workspace = true
+oci-request-signer.workspace = true
+serde_json.workspace = true

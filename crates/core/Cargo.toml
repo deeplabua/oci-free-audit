@@ -1,0 +1,18 @@
+[package]
+name = "oci-free-audit-core"
+description = "Checks behind oci-free-audit: an OCI tenancy against the Always Free limits and the actual bill — read-only"
+keywords = ["oci", "oracle-cloud", "free-tier", "billing", "audit"]
+categories = ["api-bindings", "command-line-utilities"]
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+oci-request-signer.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
