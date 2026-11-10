@@ -2,7 +2,8 @@
 
 use oci_free_audit_core::limits::Allowance;
 use oci_free_audit_core::model::{
-    Backup, Budget, Instance, ShapeConfig, Snapshot, UsageItem, Volume,
+    Backup, Bucket, Budget, Instance, LbShape, LoadBalancer, Service, ShapeConfig, Snapshot,
+    UsageItem, Volume,
 };
 use oci_free_audit_core::{Date, Finding, Options, Report, Status, audit};
 
@@ -20,6 +21,7 @@ fn inst(name: &str, shape: &str, state: &str, ocpus: f64, mem: f64) -> Instance 
             ocpus: Some(ocpus),
             memory_in_gbs: Some(mem),
         }),
+        region: String::new(),
     }
 }
 
@@ -29,6 +31,7 @@ fn vol(gb: f64) -> Volume {
         display_name: None,
         size_in_gbs: Some(gb),
         lifecycle_state: "AVAILABLE".into(),
+        region: String::new(),
     }
 }
 
@@ -37,6 +40,7 @@ fn backup() -> Backup {
         id: "ocid1.backup.oc1..b".into(),
         display_name: None,
         lifecycle_state: "AVAILABLE".into(),
+        region: String::new(),
     }
 }
 
@@ -67,6 +71,13 @@ fn base() -> Snapshot {
         boot_volumes: Ok(vec![vol(50.0), vol(50.0)]),
         block_volumes: Ok(vec![]),
         backups: Ok(vec![backup()]),
+        buckets: Ok(vec![]),
+        autonomous_dbs: Ok(vec![]),
+        mysql: Ok(vec![]),
+        load_balancers: Ok(vec![]),
+        network_load_balancers: Ok(vec![]),
+        vcns: Ok(vec![svc("vcn")]),
+        vaults: Ok(vec![]),
         usage: Ok(vec![
             usage("2026-10-05", "Compute", "Standard - A1", 0.0, 48.0),
             usage("2026-11-09", "Compute", "Standard - A1", 0.0, 48.0),
@@ -333,15 +344,6 @@ fn budgets_without_alerts_are_not_a_safety_net() {
 }
 
 #[test]
-fn other_regions_are_flagged_until_they_are_checked() {
-    let mut s = base();
-    s.regions.push("us-ashburn-1".into());
-    let f = find(&run(&s), "Other regions").clone();
-    assert_eq!(f.status, Status::Warn);
-    assert_eq!(f.items, vec!["us-ashburn-1"]);
-}
-
-#[test]
 fn names_hidden_by_inspect_only_access_fall_back_to_the_ocid() {
     let mut s = base();
     let mut i = inst("x", "VM.Standard.E4.Flex", "RUNNING", 1.0, 16.0);
@@ -349,4 +351,205 @@ fn names_hidden_by_inspect_only_access_fall_back_to_the_ocid() {
     i.id = "ocid1.instance.oc1.eu-amsterdam-1.anabcdlprq".into();
     s.instances = Ok(vec![i]);
     assert_eq!(find(&run(&s), "instance …lprq").status, Status::Fail);
+}
+
+fn svc(name: &str) -> Service {
+    Service {
+        id: format!("ocid1.x.oc1..{name}"),
+        display_name: Some(name.into()),
+        lifecycle_state: Some("AVAILABLE".into()),
+        is_free_tier: None,
+        shape_name: None,
+        vault_type: None,
+        region: "eu-amsterdam-1".into(),
+    }
+}
+
+#[test]
+fn compute_and_volumes_outside_the_home_region_are_billed() {
+    let mut s = base();
+    let mut far = inst("far", "VM.Standard.A1.Flex", "RUNNING", 1.0, 6.0);
+    far.region = "us-ashburn-1".into();
+    let mut parked = inst("parked", "VM.Standard.E2.1.Micro", "STOPPED", 1.0, 1.0);
+    parked.region = "us-ashburn-1".into();
+    let mut home = inst("arm", "VM.Standard.A1.Flex", "RUNNING", 2.0, 12.0);
+    home.region = "eu-amsterdam-1".into();
+    s.instances = Ok(vec![far, parked, home]);
+    let mut v = vol(47.0);
+    v.region = "us-ashburn-1".into();
+    s.block_volumes = Ok(vec![v]);
+    let r = run(&s);
+    assert_eq!(find(&r, "far").status, Status::Fail);
+    assert!(
+        find(&r, "far")
+            .detail
+            .contains("free only in the home region")
+    );
+    assert_eq!(find(&r, "parked").status, Status::Warn);
+    // The far A1 does not count towards the home allowance.
+    assert_eq!(find(&r, "A1.Flex total").status, Status::Ok);
+    let outside = find(&r, "Volumes outside the home region").clone();
+    assert_eq!(
+        (outside.status, outside.items.clone()),
+        (Status::Fail, vec!["47 GB in us-ashburn-1".to_owned()])
+    );
+    assert_eq!(
+        find(&r, "Block volumes").detail,
+        "100 GB of 200 (boot 100, block 0)"
+    );
+}
+
+fn bucket(name: &str, tier: &str, gb: Option<f64>) -> Bucket {
+    Bucket {
+        name: name.into(),
+        storage_tier: Some(tier.into()),
+        approximate_size: gb.map(|g| g * 1e9),
+        region: "eu-amsterdam-1".into(),
+    }
+}
+
+#[test]
+fn object_storage_limits_depend_on_the_account() {
+    let mut s = base();
+    assert_eq!(find(&run(&s), "Object Storage").detail, "no buckets");
+    // PAYG: 10 GB each of Standard and Archive.
+    s.buckets = Ok(vec![
+        bucket("a", "Standard", Some(9.5)),
+        bucket("b", "Archive", Some(2.0)),
+    ]);
+    assert_eq!(find(&run(&s), "Object Storage").status, Status::Warn);
+    s.buckets = Ok(vec![bucket("a", "Standard", Some(12.0))]);
+    assert_eq!(find(&run(&s), "Object Storage").status, Status::Fail);
+    // Always Free only: 20 GB all together.
+    s.payment_model = None;
+    s.buckets = Ok(vec![
+        bucket("a", "Standard", Some(12.0)),
+        bucket("b", "Archive", Some(5.0)),
+    ]);
+    let f = find(&run(&s), "Object Storage").clone();
+    assert_eq!(
+        (f.status, f.detail.as_str()),
+        (Status::Ok, "17.0 GB of 20 (2 buckets)")
+    );
+    // Size refused: say why.
+    s.buckets = Ok(vec![bucket("a", "Standard", None)]);
+    let f = find(&run(&s), "Object Storage").clone();
+    assert_eq!(f.status, Status::Warn);
+    assert!(f.detail.contains("read buckets"));
+}
+
+#[test]
+fn autonomous_databases_and_mysql() {
+    let mut s = base();
+    let free = |n: &str| Service {
+        is_free_tier: Some(true),
+        ..svc(n)
+    };
+    s.autonomous_dbs = Ok(vec![free("a"), free("b")]);
+    assert_eq!(
+        find(&run(&s), "Autonomous Database (free tier)").status,
+        Status::Ok
+    );
+    let paid = Service {
+        is_free_tier: Some(false),
+        ..svc("paid")
+    };
+    let stopped = Service {
+        is_free_tier: Some(false),
+        lifecycle_state: Some("STOPPED".into()),
+        ..svc("parked")
+    };
+    let gone = Service {
+        is_free_tier: Some(false),
+        lifecycle_state: Some("TERMINATED".into()),
+        ..svc("gone")
+    };
+    s.autonomous_dbs = Ok(vec![free("a"), paid, stopped, gone]);
+    let r = run(&s);
+    assert_eq!(find(&r, "paid").status, Status::Fail);
+    assert_eq!(find(&r, "parked").status, Status::Warn);
+    assert!(
+        r.sections
+            .iter()
+            .flat_map(|s| &s.findings)
+            .all(|f| f.label != "gone")
+    );
+
+    s.mysql = Ok(vec![Service {
+        shape_name: Some("MySQL.Free".into()),
+        lifecycle_state: Some("ACTIVE".into()),
+        ..svc("free-db")
+    }]);
+    assert_eq!(find(&run(&s), "MySQL HeatWave (free)").detail, "1 of 1");
+    s.mysql = Ok(vec![Service {
+        shape_name: Some("MySQL.2".into()),
+        lifecycle_state: Some("ACTIVE".into()),
+        ..svc("big-db")
+    }]);
+    assert_eq!(find(&run(&s), "big-db").status, Status::Fail);
+}
+
+#[test]
+fn load_balancers_nlbs_and_vcns() {
+    let lb = |name: &str, shape: &str, max: Option<f64>| LoadBalancer {
+        id: format!("ocid1.loadbalancer.oc1..{name}"),
+        display_name: Some(name.into()),
+        shape_name: Some(shape.into()),
+        shape_details: max.map(|m| LbShape {
+            minimum_bandwidth_in_mbps: Some(10.0),
+            maximum_bandwidth_in_mbps: Some(m),
+        }),
+        lifecycle_state: Some("ACTIVE".into()),
+        region: "eu-amsterdam-1".into(),
+    };
+    let mut s = base();
+    s.load_balancers = Ok(vec![lb("free", "flexible", Some(10.0))]);
+    assert_eq!(
+        find(&run(&s), "Load balancer (10 Mbit/s)").status,
+        Status::Ok
+    );
+    s.load_balancers = Ok(vec![
+        lb("free", "flexible", Some(10.0)),
+        lb("fast", "flexible", Some(100.0)),
+        lb("old", "100Mbps", None),
+    ]);
+    let r = run(&s);
+    assert_eq!(find(&r, "fast").status, Status::Fail);
+    assert_eq!(find(&r, "old").status, Status::Fail);
+    s.load_balancers = Ok(vec![
+        lb("a", "flexible", Some(10.0)),
+        lb("b", "10Mbps-Micro", None),
+    ]);
+    assert_eq!(
+        find(&run(&s), "Load balancer (10 Mbit/s)").status,
+        Status::Fail
+    );
+
+    s.network_load_balancers = Ok(vec![svc("n1"), svc("n2")]);
+    assert_eq!(
+        find(&run(&s), "Network load balancers").status,
+        Status::Warn
+    );
+
+    s.vcns = Ok(vec![svc("v1"), svc("v2"), svc("v3")]);
+    assert_eq!(find(&run(&s), "VCNs").status, Status::Ok, "no cap on PAYG");
+    s.payment_model = None;
+    assert_eq!(find(&run(&s), "VCNs").status, Status::Warn);
+}
+
+#[test]
+fn private_vaults_are_billed() {
+    let mut s = base();
+    s.vaults = Ok(vec![Service {
+        vault_type: Some("DEFAULT".into()),
+        ..svc("keys")
+    }]);
+    assert_eq!(find(&run(&s), "Vaults").detail, "1 virtual (free)");
+    s.vaults = Ok(vec![Service {
+        vault_type: Some("VIRTUAL_PRIVATE".into()),
+        ..svc("hsm")
+    }]);
+    let f = find(&run(&s), "Vaults").clone();
+    assert_eq!(f.status, Status::Fail);
+    assert_eq!(f.items, vec!["hsm in eu-amsterdam-1"]);
 }

@@ -55,6 +55,21 @@ fn route(method: &str, path: &str) -> (u16, Vec<(&'static str, &'static str)>, S
             vec![("opc-request-id", "req-b")],
             r#"{"code":"NotAuthorizedOrNotFound","message":"Authorization failed"}"#.to_owned(),
         ),
+        ("GET", "/20160918/autonomousDatabases") if !path.contains("..c1") => ok(
+            r#"[{"id":"ocid1.autonomousdatabase.oc1..a","displayName":"free-adb","isFreeTier":true,"lifecycleState":"AVAILABLE"}]"#,
+        ),
+        ("GET", "/20190415/dbSystems") | ("GET", "/20170115/loadBalancers") | ("GET", "/20180608/vaults") => ok("[]"),
+        ("GET", "/20200501/networkLoadBalancers") => ok(r#"{"items":[]}"#),
+        ("GET", "/20160918/vcns") if !path.contains("..c1") => ok(
+            r#"[{"id":"ocid1.vcn.oc1..v","displayName":"vcn","lifecycleState":"AVAILABLE"}]"#,
+        ),
+        ("GET", "/20160918/autonomousDatabases") | ("GET", "/20160918/vcns") => ok("[]"),
+        ("GET", "/n/") => ok(r#""acmens""#),
+        ("GET", "/n/acmens/b/") if !path.contains("..c1") => ok(r#"[{"name":"photos","namespace":"acmens"}]"#),
+        ("GET", "/n/acmens/b/") => ok("[]"),
+        ("GET", "/n/acmens/b/photos") => ok(
+            r#"{"name":"photos","storageTier":"Standard","approximateSize":3000000000}"#,
+        ),
         ("GET", "/20230401/subscriptions") => ok(r#"{"items":[{"paymentModel":"PAYG","serviceName":"CLOUDCM"}]}"#),
         _ => (404, vec![], format!(r#"{{"code":"NotFound","message":"no mock for {method} {path}"}}"#)),
     }
@@ -158,6 +173,14 @@ fn collects_everything_and_keeps_going_when_one_service_refuses() {
     );
 
     assert_eq!(s.boot_volumes.as_ref().unwrap().len(), 2);
+    assert_eq!(s.boot_volumes.as_ref().unwrap()[0].region, "eu-amsterdam-1");
+    assert_eq!(s.autonomous_dbs.as_ref().unwrap().len(), 1);
+    assert_eq!(s.vcns.as_ref().unwrap().len(), 1);
+    let buckets = s.buckets.as_ref().unwrap();
+    assert_eq!(
+        (buckets[0].name.as_str(), buckets[0].approximate_size),
+        ("photos", Some(3e9))
+    );
     assert_eq!(s.usage.as_ref().unwrap().len(), 2);
     let budgets = s.budgets.as_ref().unwrap_err();
     assert!(budgets.contains("NotAuthorizedOrNotFound"), "{budgets}");
@@ -183,5 +206,15 @@ fn the_report_for_the_mock_account() {
     assert_eq!(storage.detail, "94 GB of 200 (boot 94, block 0)");
     let budget = all.iter().find(|f| f.label == "Budget alert").unwrap();
     assert_eq!(budget.status, Status::Warn);
+    let os = all.iter().find(|f| f.label == "Object Storage").unwrap();
+    assert_eq!(
+        os.detail,
+        "Standard 3.0 GB of 10, Archive 0.0 GB of 10 (1 buckets)"
+    );
+    let adb = all
+        .iter()
+        .find(|f| f.label == "Autonomous Database (free tier)")
+        .unwrap();
+    assert_eq!(adb.detail, "1 of 2");
     assert_eq!(r.exit_code(), 1);
 }

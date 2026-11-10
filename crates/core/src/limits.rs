@@ -40,6 +40,33 @@ pub const VOLUME_BACKUPS: usize = 5;
 /// Outbound data transfer per month, GB (10 TB).
 pub const EGRESS_GB_PER_MONTH: f64 = 10_240.0;
 
+/// Object Storage on an account with only Always Free: all tiers together, GB.
+pub const OBJECT_STORAGE_GB: f64 = 20.0;
+
+/// Object Storage on a pay-as-you-go account: each of Standard and Archive, GB.
+pub const OBJECT_STORAGE_PAYG_GB_PER_TIER: f64 = 10.0;
+
+/// Always Free Autonomous Databases.
+pub const AUTONOMOUS_DB_MAX: usize = 2;
+
+/// Always Free MySQL HeatWave DB systems.
+pub const MYSQL_MAX: usize = 1;
+
+/// The Always Free MySQL HeatWave shape.
+pub const MYSQL_FREE_SHAPE: &str = "MySQL.Free";
+
+/// Always Free flexible load balancers.
+pub const LB_MAX: usize = 1;
+
+/// Bandwidth of the Always Free flexible load balancer, Mbit/s.
+pub const LB_FREE_MBPS: f64 = 10.0;
+
+/// Always Free network load balancers.
+pub const NLB_MAX: usize = 1;
+
+/// VCNs on an account with only Always Free.
+pub const VCN_MAX: usize = 2;
+
 /// Usage API SKU names that are A1 compute (OCPU and memory).
 pub const A1_SKUS: [&str; 2] = ["Standard - A1", "Standard - A1 - Memory"];
 

@@ -5,7 +5,9 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 use crate::date::Date;
-use crate::model::{Backup, Budget, Listed, Snapshot, UsageItem, Volume};
+use crate::model::{
+    Backup, Bucket, Budget, Instance, Listed, LoadBalancer, Service, Snapshot, UsageItem, Volume,
+};
 
 const IDENTITY: &str = "/20160918";
 const CORE: &str = "/20160918";
@@ -15,65 +17,106 @@ const CORE: &str = "/20160918";
 pub fn collect(client: &Client, since: Date, today: Date) -> Result<Snapshot> {
     let tenancy_id = client.tenancy().to_owned();
     let tenancy: Value = client.get("identity", &format!("{IDENTITY}/tenancies/{tenancy_id}"))?;
-    let regions: Vec<Value> = client.get(
+    let subscriptions: Vec<Value> = client.get(
         "identity",
         &format!("{IDENTITY}/tenancies/{tenancy_id}/regionSubscriptions"),
     )?;
-    let home_region = regions
+    let home_region = subscriptions
         .iter()
         .find(|r| r["isHomeRegion"] == true)
         .and_then(|r| r["regionName"].as_str())
         .unwrap_or(client.region())
         .to_owned();
+    let mut regions: Vec<String> = subscriptions
+        .iter()
+        .filter_map(|r| r["regionName"].as_str().map(str::to_owned))
+        .collect();
+    if regions.is_empty() {
+        regions.push(home_region.clone());
+    }
     let home = client.in_region(home_region.clone());
     let oci = home.on_domain(OCI_DOMAIN);
     let t = encode(&tenancy_id);
-
     let compartments = compartments(&home, &tenancy_id);
-    let per_compartment = |path: &dyn Fn(&str) -> String| -> Listed<Value> {
+
+    // GET `path(compartment)` in every region and compartment; each item tagged with its region.
+    let everywhere = |service: &str,
+                      domain: Option<&str>,
+                      wrapped: bool,
+                      path: &dyn Fn(&str) -> String|
+     -> Listed<(String, Value)> {
         let ids = compartments.as_ref().map_err(Clone::clone)?;
         let mut all = Vec::new();
-        for id in ids {
-            all.extend(
-                list_all::<Value>(&home, "iaas", &path(&encode(id))).map_err(|e| e.to_string())?,
-            );
+        for region in &regions {
+            let mut c = home.in_region(region.clone());
+            if let Some(d) = domain {
+                c = c.on_domain(d);
+            }
+            for id in ids {
+                let p = path(&encode(id));
+                let list = if wrapped {
+                    list_all_items(&c, service, &p)
+                } else {
+                    list_all::<Value>(&c, service, &p)
+                };
+                all.extend(
+                    list.map_err(|e| format!("{region}: {e}"))?
+                        .into_iter()
+                        .map(|v| (region.clone(), v)),
+                );
+            }
         }
         Ok(all)
     };
 
-    let instances =
-        per_compartment(&|c| format!("{CORE}/instances?compartmentId={c}")).and_then(parse);
-    let block_volumes =
-        per_compartment(&|c| format!("{CORE}/volumes?compartmentId={c}")).and_then(parse);
-    let boot_volumes = list_all::<Value>(
-        &home,
-        "identity",
-        &format!("{IDENTITY}/availabilityDomains?compartmentId={t}"),
-    )
-    .map_err(|e| e.to_string())
-    .and_then(|ads| {
-        let names: Vec<String> = ads
-            .iter()
-            .filter_map(|a| a["name"].as_str().map(str::to_owned))
-            .collect();
-        let mut all = Vec::new();
-        for ad in &names {
-            let ad = encode(ad);
-            all.extend(per_compartment(&|c| {
-                format!("{CORE}/bootVolumes?compartmentId={c}&availabilityDomain={ad}")
-            })?);
-        }
-        Ok(all)
+    let instances = everywhere("iaas", None, false, &|c| {
+        format!("{CORE}/instances?compartmentId={c}")
     })
-    .and_then(parse::<Volume>);
-    let backups = per_compartment(&|c| format!("{CORE}/bootVolumeBackups?compartmentId={c}"))
-        .and_then(|mut boot| {
-            boot.extend(per_compartment(&|c| {
-                format!("{CORE}/volumeBackups?compartmentId={c}")
-            })?);
-            Ok(boot)
+    .and_then(|v| tagged(v, |i: &mut Instance, r| i.region = r));
+    let block_volumes = everywhere("iaas", None, false, &|c| {
+        format!("{CORE}/volumes?compartmentId={c}")
+    })
+    .and_then(|v| tagged(v, |i: &mut Volume, r| i.region = r));
+    let boot_volumes = boot_volumes(&home, &regions, &compartments, &t)
+        .and_then(|v| tagged(v, |i: &mut Volume, r| i.region = r));
+    let backups = everywhere("iaas", None, false, &|c| {
+        format!("{CORE}/bootVolumeBackups?compartmentId={c}")
+    })
+    .and_then(|mut boot| {
+        boot.extend(everywhere("iaas", None, false, &|c| {
+            format!("{CORE}/volumeBackups?compartmentId={c}")
+        })?);
+        Ok(boot)
+    })
+    .and_then(|v| tagged(v, |i: &mut Backup, r| i.region = r));
+
+    let set_region = |s: &mut Service, r: String| s.region = r;
+    let autonomous_dbs = everywhere("database", None, false, &|c| {
+        format!("{CORE}/autonomousDatabases?compartmentId={c}")
+    })
+    .and_then(|v| tagged(v, set_region));
+    let mysql = everywhere("mysql", Some(OCP_DOMAIN), false, &|c| {
+        format!("/20190415/dbSystems?compartmentId={c}")
+    })
+    .and_then(|v| tagged(v, set_region));
+    let load_balancers = everywhere("iaas", None, false, &|c| {
+        format!("/20170115/loadBalancers?compartmentId={c}")
+    })
+    .and_then(|v| tagged(v, |i: &mut LoadBalancer, r| i.region = r));
+    let network_load_balancers =
+        everywhere("network-load-balancer-api", Some(OCI_DOMAIN), true, &|c| {
+            format!("/20200501/networkLoadBalancers?compartmentId={c}")
         })
-        .and_then(parse::<Backup>);
+        .and_then(|v| tagged(v, set_region));
+    let vcns = everywhere("iaas", None, false, &|c| {
+        format!("{CORE}/vcns?compartmentId={c}")
+    })
+    .and_then(|v| tagged(v, set_region));
+    let vaults = everywhere("kms", None, false, &|c| {
+        format!("/20180608/vaults?compartmentId={c}")
+    })
+    .and_then(|v| tagged(v, set_region));
+    let buckets = buckets(&home, &regions, &compartments);
 
     let usage = usage(&oci, &tenancy_id, since, today);
     let budgets = list_all::<Budget>(
@@ -97,20 +140,110 @@ pub fn collect(client: &Client, since: Date, today: Date) -> Result<Snapshot> {
         tenancy_name: tenancy["name"].as_str().unwrap_or("").to_owned(),
         tenancy_id,
         home_region,
-        regions: regions
-            .iter()
-            .filter_map(|r| r["regionName"].as_str().map(str::to_owned))
-            .collect(),
+        regions,
         payment_model,
         instances,
         boot_volumes,
         block_volumes,
         backups,
+        buckets,
+        autonomous_dbs,
+        mysql,
+        load_balancers,
+        network_load_balancers,
+        vcns,
+        vaults,
         usage,
         budgets,
         today,
         since,
     })
+}
+
+/// The domain MySQL HeatWave answers on: `mysql.<region>.ocp.oraclecloud.com`.
+const OCP_DOMAIN: &str = "ocp.oraclecloud.com";
+
+/// Boot volumes are listed per availability domain.
+fn boot_volumes(
+    home: &Client,
+    regions: &[String],
+    compartments: &Listed<String>,
+    t: &str,
+) -> Listed<(String, Value)> {
+    let ids = compartments.as_ref().map_err(Clone::clone)?;
+    let mut all = Vec::new();
+    for region in regions {
+        let c = home.in_region(region.clone());
+        let ads = list_all::<Value>(
+            &c,
+            "identity",
+            &format!("{IDENTITY}/availabilityDomains?compartmentId={t}"),
+        )
+        .map_err(|e| format!("{region}: {e}"))?;
+        for ad in ads.iter().filter_map(|a| a["name"].as_str()) {
+            for id in ids {
+                let path = format!(
+                    "{CORE}/bootVolumes?compartmentId={}&availabilityDomain={}",
+                    encode(id),
+                    encode(ad)
+                );
+                let list =
+                    list_all::<Value>(&c, "iaas", &path).map_err(|e| format!("{region}: {e}"))?;
+                all.extend(list.into_iter().map(|v| (region.clone(), v)));
+            }
+        }
+    }
+    Ok(all)
+}
+
+/// Buckets with their size. `approximateSize` needs `read buckets`; without it the size stays
+/// unknown and the check says so.
+fn buckets(home: &Client, regions: &[String], compartments: &Listed<String>) -> Listed<Bucket> {
+    let ids = compartments.as_ref().map_err(Clone::clone)?;
+    let ns: String = home
+        .get("objectstorage", "/n/")
+        .map_err(|e| e.to_string())?;
+    let mut all = Vec::new();
+    for region in regions {
+        let c = home.in_region(region.clone());
+        for id in ids {
+            let path = format!("/n/{ns}/b/?compartmentId={}", encode(id));
+            for b in list_all::<Value>(&c, "objectstorage", &path)
+                .map_err(|e| format!("{region}: {e}"))?
+            {
+                let Some(name) = b["name"].as_str() else {
+                    continue;
+                };
+                let detail = c
+                    .get::<Value>(
+                        "objectstorage",
+                        &format!("/n/{ns}/b/{}?fields=approximateSize", encode(name)),
+                    )
+                    .unwrap_or(b.clone());
+                let mut bucket: Bucket = serde_json::from_value(detail)
+                    .map_err(|e| format!("unexpected response: {e}"))?;
+                bucket.region = region.clone();
+                all.push(bucket);
+            }
+        }
+    }
+    Ok(all)
+}
+
+/// Parse region-tagged values and record the region in each item.
+fn tagged<T: DeserializeOwned>(
+    values: Vec<(String, Value)>,
+    set: impl Fn(&mut T, String),
+) -> Listed<T> {
+    values
+        .into_iter()
+        .map(|(region, v)| {
+            let mut item: T =
+                serde_json::from_value(v).map_err(|e| format!("unexpected response: {e}"))?;
+            set(&mut item, region);
+            Ok(item)
+        })
+        .collect()
 }
 
 /// The root compartment and every active compartment under it.

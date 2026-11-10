@@ -86,12 +86,20 @@ Limits as of 10 November 2026, from
 | Compute shapes | only `VM.Standard.A1.Flex` and `VM.Standard.E2.1.Micro` are free; anything else running → ✗ |
 | A1 | ≤ 2 OCPU / 12 GB ✓; up to 4 / 24 ✓ only if the bill for A1 is zero; above → ✗ |
 | E2.1.Micro | ≤ 2 instances |
-| Block storage | boot + block volumes ≤ 200 GB (⚠ from 90 %) |
+| Regions | compute and block volumes outside the home region → ✗ (never free there) |
+| Block storage | boot + block volumes ≤ 200 GB in the home region (⚠ from 90 %) |
 | Volume backups | boot + block ≤ 5 (⚠ at 5: no room left) |
+| Object Storage | ≤ 20 GB on an Always Free account; ≤ 10 GB each of Standard and Archive on PAYG |
+| Autonomous Database | ≤ 2 with `isFreeTier`; any other running → ✗, stopped → ⚠ (storage billed) |
+| MySQL HeatWave | ≤ 1 `MySQL.Free`; any other shape running → ✗ |
+| Load balancer | ≤ 1 flexible at 10 Mbit/s; any other shape → ✗ |
+| Network load balancer | ≤ 1 (⚠ above) |
+| VCN | ≤ 2 on an Always Free account (⚠ above); no cap on PAYG |
+| Vault | virtual vaults are free; a virtual private vault → ✗ |
 | Budget | a budget with an alert rule exists — otherwise ⚠ and how to create one |
 
-The home region is checked, all compartments. Other subscribed regions are listed as ⚠ for now.
-Anything the API refuses to show is a ⚠ "could not check", never a silent ✓.
+Every subscribed region and every compartment is checked. Anything the API refuses to show is a
+⚠ "could not check", never a silent ✓.
 
 ## Permissions
 
@@ -104,12 +112,13 @@ Allow group <your-group> to read usage-report in tenancy
 ```
 
 With only `inspect`, OCI hides resource names; the report then shows the end of the OCID
-instead. Add `Allow group <your-group> to read instances in tenancy` to see instance names.
+instead. Add `Allow group <your-group> to read instances in tenancy` to see instance names, and
+`Allow group <your-group> to read buckets in tenancy` for Object Storage sizes.
 
 ## Not yet
 
-Every region; Object Storage, Autonomous Database, load balancers, Vault and the rest of the
-Always Free list; the trial period; notifications. See [`CHANGELOG.md`](CHANGELOG.md).
+Vault key versions and secrets counts, Email Delivery and Notifications volumes, the 50,000
+Object Storage requests a month, the trial period, notifications. See [`CHANGELOG.md`](CHANGELOG.md).
 
 ## License
 
