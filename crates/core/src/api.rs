@@ -7,7 +7,8 @@ use serde_json::{Value, json};
 use crate::date::Date;
 use crate::limits;
 use crate::model::{
-    Backup, Bucket, Budget, Instance, Listed, LoadBalancer, Service, Snapshot, UsageItem, Volume,
+    Backup, Bucket, Budget, Counted, Instance, Listed, LoadBalancer, Service, Snapshot, UsageItem,
+    Volume,
 };
 
 const IDENTITY: &str = "/20160918";
@@ -117,6 +118,14 @@ pub fn collect(client: &Client, since: Date, today: Date) -> Result<Snapshot> {
         format!("/20180608/vaults?compartmentId={c}")
     })
     .and_then(|v| tagged(v, set_region));
+    let hsm_key_versions = match (&vaults, &compartments) {
+        (Ok(v), Ok(ids)) => hsm_key_versions(&home, v, ids),
+        (Err(e), _) | (_, Err(e)) => Err(e.clone()),
+    };
+    let secrets = everywhere("vaults", Some(OCI_DOMAIN), false, &|c| {
+        format!("/20180608/secrets?compartmentId={c}")
+    })
+    .map(|v| v.iter().filter(|(_, s)| alive(s)).count());
     let buckets = buckets(&home, &regions, &compartments);
 
     let usage = usage(&oci, &tenancy_id, since, today);
@@ -164,6 +173,8 @@ pub fn collect(client: &Client, since: Date, today: Date) -> Result<Snapshot> {
         network_load_balancers,
         vcns,
         vaults,
+        hsm_key_versions,
+        secrets,
         usage,
         budgets,
         today,
@@ -239,6 +250,58 @@ fn buckets(home: &Client, regions: &[String], compartments: &Listed<String>) -> 
         }
     }
     Ok(all)
+}
+
+/// Not deleted and not on its way out.
+fn alive(v: &Value) -> bool {
+    !matches!(
+        v["lifecycleState"].as_str(),
+        Some("DELETED" | "DELETING" | "PENDING_DELETION" | "SCHEDULING_DELETION")
+    )
+}
+
+/// HSM key versions across every vault: keys live on each vault's own management endpoint,
+/// `<id>-management.kms.<region>.oraclecloud.com`, listed per compartment.
+fn hsm_key_versions(home: &Client, vaults: &[Service], compartments: &[String]) -> Counted {
+    let mut n = 0;
+    for v in vaults.iter().filter(|v| v.exists()) {
+        let Some(endpoint) = &v.management_endpoint else {
+            continue;
+        };
+        let host = endpoint
+            .split_once("://")
+            .map_or(endpoint.as_str(), |(_, h)| h)
+            .trim_end_matches('/');
+        let c = home.in_region(v.region.clone());
+        let suffix = format!(".{}.{}", v.region, c.domain());
+        let service = host
+            .strip_suffix(&suffix)
+            .ok_or_else(|| format!("unexpected vault endpoint {endpoint}"))?;
+        for id in compartments {
+            let keys = list_all::<Value>(
+                &c,
+                service,
+                &format!(
+                    "/20180608/keys?compartmentId={}&protectionMode=HSM",
+                    encode(id)
+                ),
+            )
+            .map_err(|e| format!("{}: {e}", v.region))?;
+            for key in keys.iter().filter(|k| alive(k)) {
+                let Some(key_id) = key["id"].as_str() else {
+                    continue;
+                };
+                let versions = list_all::<Value>(
+                    &c,
+                    service,
+                    &format!("/20180608/keys/{}/keyVersions", encode(key_id)),
+                )
+                .map_err(|e| format!("{}: {e}", v.region))?;
+                n += versions.iter().filter(|k| alive(k)).count();
+            }
+        }
+    }
+    Ok(n)
 }
 
 /// Parse region-tagged values and record the region in each item.

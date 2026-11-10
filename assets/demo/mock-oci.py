@@ -56,6 +56,7 @@ GET = {
     "/20200501/networkLoadBalancers": {"items": []},
     "/20160918/vcns": [{"id": "ocid1.vcn.oc1..a", "displayName": "main", "lifecycleState": "AVAILABLE"}],
     "/20180608/vaults": [],
+    "/20180608/secrets": [],
     "/n/": "acmens",
     "/n/acmens/b/": [{"name": "backups"}],
     "/n/acmens/b/backups": {"name": "backups", "storageTier": "Standard", "approximateSize": 1_800_000_000},

@@ -79,6 +79,8 @@ fn base() -> Snapshot {
         network_load_balancers: Ok(vec![]),
         vcns: Ok(vec![svc("vcn")]),
         vaults: Ok(vec![]),
+        hsm_key_versions: Ok(0),
+        secrets: Ok(0),
         usage: Ok(vec![
             usage("2026-10-05", "Compute", "Standard - A1", 0.0, 48.0),
             usage("2026-11-09", "Compute", "Standard - A1", 0.0, 48.0),
@@ -362,6 +364,7 @@ fn svc(name: &str) -> Service {
         is_free_tier: None,
         shape_name: None,
         vault_type: None,
+        management_endpoint: None,
         region: "eu-amsterdam-1".into(),
     }
 }
@@ -607,4 +610,52 @@ fn trial_over_is_not_shown() {
     let r = run(&s);
     assert!(r.sections.iter().all(|x| x.title != "TRIAL"));
     assert_eq!(r.trial_ends, None);
+}
+
+#[test]
+fn vault_key_versions_and_secrets() {
+    let mut s = base();
+    s.hsm_key_versions = Ok(21);
+    s.secrets = Ok(150);
+    let r = run(&s);
+    let f = find(&r, "HSM key versions");
+    assert_eq!((f.status, f.detail.as_str()), (Status::Fail, "21 of 20"));
+    assert_eq!(find(&r, "Secrets").status, Status::Ok);
+    s.secrets = Err("403 NotAuthorizedOrNotFound".into());
+    assert_eq!(find(&run(&s), "Secrets").status, Status::Warn);
+}
+
+#[test]
+fn monthly_allowances_from_usage_in_price_list_units() {
+    let mut s = base();
+    s.usage = Ok(vec![
+        // 4.5 × 10,000 requests, 2.9 × 1,000 emails, last month's emails do not count.
+        usage(
+            "2026-11-02",
+            "Object Storage",
+            "Object Storage - Requests",
+            0.0,
+            4.5,
+        ),
+        usage("2026-11-03", "Email Delivery", "Email Delivery", 0.0, 2.9),
+        usage("2026-10-30", "Email Delivery", "Email Delivery", 0.0, 9.0),
+        usage(
+            "2026-11-04",
+            "Notifications",
+            "Notifications - Email Delivery",
+            0.0,
+            0.2,
+        ),
+    ]);
+    let r = run(&s);
+    let req = find(&r, "Object Storage requests");
+    assert_eq!(req.status, Status::Warn);
+    assert_eq!(req.detail, "45,000 of 50,000 requests this month");
+    let mail = find(&r, "Email Delivery");
+    assert_eq!(mail.detail, "2,900 of 3,000 emails this month");
+    assert_eq!(
+        find(&r, "Notifications, email").detail,
+        "200 of 1,000 emails this month"
+    );
+    assert_eq!(find(&r, "Notifications, HTTPS").status, Status::Ok);
 }

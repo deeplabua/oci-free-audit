@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0 — 2026-11-10
+
+- Vault: HSM-protected key versions (≤ 20) and secrets (≤ 150) are counted across every vault,
+  region and compartment; software-protected keys are free and not counted.
+- A MONTHLY section: this month's Object Storage requests (≤ 50,000), Email Delivery (≤ 3,000
+  emails) and Notifications (≤ 1,000,000 HTTPS, ≤ 1,000 email deliveries) from the Usage API,
+  ⚠ from 80 %.
+
 ## 0.3.0 — 2026-11-10
 
 - Free trial: while the 30-day trial runs, a TRIAL section shows the day it ends and every

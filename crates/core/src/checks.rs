@@ -45,6 +45,10 @@ pub fn audit(s: &Snapshot, opts: &Options) -> Report {
             findings: security(s),
         },
         Section {
+            title: "MONTHLY".into(),
+            findings: monthly(s),
+        },
+        Section {
             title: "SAFETY NET".into(),
             findings: safety_net(s),
         },
@@ -588,9 +592,83 @@ fn network(s: &Snapshot) -> Vec<Finding> {
     out
 }
 
-/// Vault: virtual vaults are free, a virtual private vault is billed.
+/// Vault: virtual vaults are free, a virtual private vault is billed; HSM key versions and
+/// secrets are counted across all vaults.
 fn security(s: &Snapshot) -> Vec<Finding> {
-    vec![match &s.vaults {
+    let mut out = vec![vault_kinds(s)];
+    out.push(match &s.hsm_key_versions {
+        Err(e) => Finding::unknown("HSM key versions", e),
+        Ok(n) => count("HSM key versions", *n, limits::VAULT_HSM_KEY_VERSIONS),
+    });
+    out.push(match &s.secrets {
+        Err(e) => Finding::unknown("Secrets", e),
+        Ok(n) => count("Secrets", *n, limits::VAULT_SECRETS),
+    });
+    out
+}
+
+/// Email, notifications and Object Storage requests this month, from the Usage API.
+fn monthly(s: &Snapshot) -> Vec<Finding> {
+    let items = match &s.usage {
+        Ok(items) => items,
+        Err(e) => return vec![Finding::unknown("Monthly allowances", e)],
+    };
+    let current = s.today.month_key();
+    limits::MONTHLY
+        .iter()
+        .map(|m| {
+            let used: f64 = items
+                .iter()
+                .filter(|i| i.date().is_some_and(|d| d.month_key() == current))
+                .filter(|i| contains(i.service.as_deref(), m.service))
+                .filter(|i| contains(i.sku_name.as_deref(), m.sku))
+                // "Notifications - Email Delivery" is not Email Delivery.
+                .filter(|i| {
+                    m.service != "email delivery" || !contains(i.service.as_deref(), "notification")
+                })
+                .map(|i| i.computed_quantity.unwrap_or(0.0) * m.per_unit)
+                .sum::<f64>()
+                + 0.0;
+            let share = used / m.free;
+            let status = if share > 0.8 {
+                Status::Warn
+            } else {
+                Status::Ok
+            };
+            let mut detail = format!(
+                "{} of {} {} this month",
+                thousands(used),
+                thousands(m.free),
+                m.noun
+            );
+            if share > 1.0 {
+                detail += " — the rest is billed on pay-as-you-go";
+            }
+            Finding::new(status, m.label, detail)
+        })
+        .collect()
+}
+
+fn contains(text: Option<&str>, needle: &str) -> bool {
+    text.is_some_and(|t| t.to_lowercase().contains(needle))
+}
+
+/// `1,000,000`.
+fn thousands(n: f64) -> String {
+    let digits = format!("{:.0}", n.round());
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// Virtual vaults are free, a virtual private vault is billed.
+fn vault_kinds(s: &Snapshot) -> Finding {
+    match &s.vaults {
         Err(e) => Finding::unknown("Vaults", e),
         Ok(list) => {
             let live: Vec<_> = list.iter().filter(|v| v.exists()).collect();
@@ -614,7 +692,7 @@ fn security(s: &Snapshot) -> Vec<Finding> {
                 .with_items(private)
             }
         }
-    }]
+    }
 }
 
 /// A resource that is not Always Free: ✗ while running, ⚠ while stopped (storage still billed).

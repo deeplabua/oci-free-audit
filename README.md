@@ -172,7 +172,8 @@ Limits as of 10 November 2026, from
 | Load balancer | ≤ 1 flexible at 10 Mbit/s; any other shape → ✗ |
 | Network load balancer | ≤ 1 (⚠ above) |
 | VCN | ≤ 2 on an Always Free account (⚠ above); no cap on PAYG |
-| Vault | virtual vaults are free; a virtual private vault → ✗ |
+| Vault | virtual vaults are free; a virtual private vault → ✗; HSM key versions ≤ 20 and secrets ≤ 150 across all vaults (software keys are free) |
+| Monthly | this month's Object Storage requests ≤ 50,000, Email Delivery ≤ 3,000 emails, Notifications ≤ 1,000,000 HTTPS and ≤ 1,000 email deliveries (⚠ from 80 %) |
 | Budget | a budget with an alert rule exists — otherwise ⚠ and how to create one |
 
 Every subscribed region and every compartment is checked. Anything the API refuses to show is a
@@ -190,12 +191,12 @@ Allow group <your-group> to read usage-report in tenancy
 
 With only `inspect`, OCI hides resource names; the report then shows the end of the OCID
 instead. Add `Allow group <your-group> to read instances in tenancy` to see instance names, and
-`Allow group <your-group> to read buckets in tenancy` for Object Storage sizes.
+`Allow group <your-group> to read buckets in tenancy` for Object Storage sizes. Vault keys and
+secrets are only counted, never read — `inspect all-resources` covers them.
 
 ## Not yet
 
-Vault key versions and secrets counts, Email Delivery and Notifications volumes, the 50,000
-Object Storage requests a month. See [`CHANGELOG.md`](CHANGELOG.md).
+Retrying when OCI throttles a large tenancy (HTTP 429). See [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Support
 

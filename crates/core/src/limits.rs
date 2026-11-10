@@ -70,6 +70,67 @@ pub const NLB_MAX: usize = 1;
 /// VCNs on an account with only Always Free.
 pub const VCN_MAX: usize = 2;
 
+/// HSM-protected master encryption key versions, all vaults together (software keys are free).
+pub const VAULT_HSM_KEY_VERSIONS: usize = 20;
+/// Vault secrets, all vaults together.
+pub const VAULT_SECRETS: usize = 150;
+
+/// A monthly allowance counted in the Usage API. Its `computedQuantity` is in the price list's
+/// unit — e.g. "Monitoring Service - Retrieval" in millions of datapoints — so `per_unit`
+/// converts it back to a count.
+#[derive(Debug, Clone, Copy)]
+pub struct Monthly {
+    /// What it is, for the report.
+    pub label: &'static str,
+    /// Usage API service name contains this (case-insensitive).
+    pub service: &'static str,
+    /// SKU name contains this (case-insensitive).
+    pub sku: &'static str,
+    /// Free per month.
+    pub free: f64,
+    /// One price-list unit, e.g. 1,000 emails.
+    pub per_unit: f64,
+    /// e.g. `emails`.
+    pub noun: &'static str,
+}
+
+/// Monthly allowances counted from usage. SKU units are Oracle's price list as of 2026-11-10;
+/// none of these had usage on the account the tool was checked on.
+pub const MONTHLY: [Monthly; 4] = [
+    Monthly {
+        label: "Object Storage requests",
+        service: "object storage",
+        sku: "request",
+        free: 50_000.0,
+        per_unit: 10_000.0,
+        noun: "requests",
+    },
+    Monthly {
+        label: "Email Delivery",
+        service: "email delivery",
+        sku: "email",
+        free: 3_000.0,
+        per_unit: 1_000.0,
+        noun: "emails",
+    },
+    Monthly {
+        label: "Notifications, HTTPS",
+        service: "notification",
+        sku: "https",
+        free: 1_000_000.0,
+        per_unit: 1_000_000.0,
+        noun: "deliveries",
+    },
+    Monthly {
+        label: "Notifications, email",
+        service: "notification",
+        sku: "email",
+        free: 1_000.0,
+        per_unit: 1_000.0,
+        noun: "emails",
+    },
+];
+
 /// Usage API SKU names that are A1 compute (OCPU and memory).
 pub const A1_SKUS: [&str; 2] = ["Standard - A1", "Standard - A1 - Memory"];
 

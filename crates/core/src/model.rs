@@ -44,6 +44,10 @@ pub struct Snapshot {
     pub vcns: Listed<Service>,
     /// Vaults, every region.
     pub vaults: Listed<Service>,
+    /// HSM-protected key versions in all vaults, not deleted.
+    pub hsm_key_versions: Counted,
+    /// Vault secrets, every region, not deleted.
+    pub secrets: Counted,
     /// Daily cost by service and SKU over the audited period.
     pub usage: Listed<UsageItem>,
     /// Budgets on the tenancy.
@@ -56,6 +60,9 @@ pub struct Snapshot {
 
 /// A list read from OCI, or why it could not be.
 pub type Listed<T> = Result<Vec<T>, String>;
+
+/// A count, or why it could not be made.
+pub type Counted = Result<usize, String>;
 
 /// A compute instance.
 #[derive(Debug, Clone, Deserialize)]
@@ -286,6 +293,9 @@ pub struct Service {
     /// Vault: `DEFAULT` (virtual) or `VIRTUAL_PRIVATE`.
     #[serde(default)]
     pub vault_type: Option<String>,
+    /// Vault: where its keys are managed, `https://<id>-management.kms.<region>.oraclecloud.com`.
+    #[serde(default)]
+    pub management_endpoint: Option<String>,
     /// Region it lives in (set by `collect`).
     #[serde(skip)]
     pub region: String,

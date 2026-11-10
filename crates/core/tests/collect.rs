@@ -58,7 +58,25 @@ fn route(method: &str, path: &str) -> (u16, Vec<(&'static str, &'static str)>, S
         ("GET", "/20160918/autonomousDatabases") if !path.contains("..c1") => ok(
             r#"[{"id":"ocid1.autonomousdatabase.oc1..a","displayName":"free-adb","isFreeTier":true,"lifecycleState":"AVAILABLE"}]"#,
         ),
-        ("GET", "/20190415/dbSystems") | ("GET", "/20170115/loadBalancers") | ("GET", "/20180608/vaults") => ok("[]"),
+        ("GET", "/20190415/dbSystems") | ("GET", "/20170115/loadBalancers") => ok("[]"),
+        // One virtual vault in the root compartment: one HSM key with two live versions and one
+        // deleted; a deleted key whose versions must not be asked for. Two secrets, one deleted.
+        ("GET", "/20180608/vaults") if !path.contains("..c1") => ok(
+            r#"[{"id":"ocid1.vault.oc1..v","vaultType":"DEFAULT","lifecycleState":"ACTIVE",
+                "managementEndpoint":"https://abc-management.kms.eu-amsterdam-1.oraclecloud.com"}]"#,
+        ),
+        ("GET", "/20180608/vaults") => ok("[]"),
+        ("GET", "/20180608/keys") if path.contains("protectionMode=HSM") && !path.contains("..c1") => ok(
+            r#"[{"id":"ocid1.key.oc1..k1","lifecycleState":"ENABLED"},{"id":"ocid1.key.oc1..k2","lifecycleState":"DELETED"}]"#,
+        ),
+        ("GET", "/20180608/keys") => ok("[]"),
+        ("GET", "/20180608/keys/ocid1.key.oc1..k1/keyVersions") => ok(
+            r#"[{"lifecycleState":"ENABLED"},{"lifecycleState":"ENABLED"},{"lifecycleState":"DELETED"}]"#,
+        ),
+        ("GET", "/20180608/secrets") if !path.contains("..c1") => ok(
+            r#"[{"lifecycleState":"ACTIVE"},{"lifecycleState":"PENDING_DELETION"}]"#,
+        ),
+        ("GET", "/20180608/secrets") => ok("[]"),
         ("GET", "/20200501/networkLoadBalancers") => ok(r#"{"items":[]}"#),
         ("GET", "/20160918/vcns") if !path.contains("..c1") => ok(
             r#"[{"id":"ocid1.vcn.oc1..v","displayName":"vcn","lifecycleState":"AVAILABLE"}]"#,
@@ -176,6 +194,12 @@ fn collects_everything_and_keeps_going_when_one_service_refuses() {
     assert_eq!(s.boot_volumes.as_ref().unwrap()[0].region, "eu-amsterdam-1");
     assert_eq!(s.autonomous_dbs.as_ref().unwrap().len(), 1);
     assert_eq!(s.vcns.as_ref().unwrap().len(), 1);
+    assert_eq!(s.hsm_key_versions, Ok(2));
+    assert_eq!(s.secrets, Ok(1));
+    assert!(
+        !seen.iter().any(|r| r.contains("ocid1.key.oc1..k2")),
+        "{seen:#?}"
+    );
     let buckets = s.buckets.as_ref().unwrap();
     assert_eq!(
         (buckets[0].name.as_str(), buckets[0].approximate_size),
