@@ -84,6 +84,8 @@ pub struct Report {
     pub home_region: String,
     /// `PAYG`, ... if known.
     pub payment_model: Option<String>,
+    /// The free trial's last day, while it is not over.
+    pub trial_ends: Option<Date>,
     /// When the Always Free numbers were last checked.
     pub limits_as_of: &'static str,
     /// First day of the audited period.

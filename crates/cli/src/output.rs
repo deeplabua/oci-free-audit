@@ -1,6 +1,7 @@
 //! The report as text, and masking for sharing it.
 
 use std::fmt::Write as _;
+use std::io::IsTerminal as _;
 
 use oci_free_audit_core::{Report, Status};
 
@@ -24,8 +25,50 @@ fn mask_tail(text: &str, keep: usize) -> String {
     format!("****{tail}")
 }
 
-/// The human-readable report.
-pub fn text(r: &Report) -> String {
+/// `--color`.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum ColorChoice {
+    /// Only when stdout is a terminal and `NO_COLOR` is not set.
+    Auto,
+    /// Always.
+    Always,
+    /// Never.
+    Never,
+}
+
+impl ColorChoice {
+    /// Whether to paint the text report.
+    pub fn enabled(self) -> bool {
+        match self {
+            ColorChoice::Always => true,
+            ColorChoice::Never => false,
+            ColorChoice::Auto => {
+                std::io::stdout().is_terminal()
+                    && std::env::var_os("NO_COLOR").is_none_or(|v| v.is_empty())
+            }
+        }
+    }
+}
+
+/// ANSI colour: green ✓, yellow ⚠, red ✗, bold section titles.
+fn paint(color: bool, code: &str, text: &str) -> String {
+    if color {
+        format!("\x1b[{code}m{text}\x1b[0m")
+    } else {
+        text.to_owned()
+    }
+}
+
+fn status_color(status: Status) -> &'static str {
+    match status {
+        Status::Ok => "32",
+        Status::Warn => "33",
+        Status::Fail => "31",
+    }
+}
+
+/// The human-readable report; `color` only for a terminal.
+pub fn text(r: &Report, color: bool) -> String {
     let mut out = String::new();
     let mut head = format!("oci-free-audit · tenancy {}", r.tenancy);
     if let Some(model) = &r.payment_model {
@@ -41,7 +84,7 @@ pub fn text(r: &Report) -> String {
         if let (true, Some(up_to)) = (section.title == "COST", r.cost_data_up_to) {
             title += &format!("  (data up to {up_to})");
         }
-        let _ = writeln!(out, "\n{title}");
+        let _ = writeln!(out, "\n{}", paint(color, "1", &title));
         let width = section
             .findings
             .iter()
@@ -53,7 +96,7 @@ pub fn text(r: &Report) -> String {
             let _ = writeln!(
                 out,
                 "  {} {}{}   {}",
-                f.status.symbol(),
+                paint(color, status_color(f.status), f.status.symbol()),
                 f.label,
                 " ".repeat(pad),
                 f.detail
@@ -74,7 +117,8 @@ pub fn text(r: &Report) -> String {
             plural(warn)
         ),
     };
-    let _ = writeln!(out, "\nResult: {summary}");
+    let worst = paint(color, &format!("1;{}", status_color(r.result)), &summary);
+    let _ = writeln!(out, "\nResult: {worst}");
     out
 }
 
@@ -85,6 +129,12 @@ fn plural(n: usize) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn colour_only_when_asked() {
+        assert_eq!(paint(false, "32", "✓"), "✓");
+        assert_eq!(paint(true, "32", "✓"), "\x1b[32m✓\x1b[0m");
+    }
 
     #[test]
     fn masks_names_and_ocids() {

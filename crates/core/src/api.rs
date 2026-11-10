@@ -5,6 +5,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 use crate::date::Date;
+use crate::limits;
 use crate::model::{
     Backup, Bucket, Budget, Instance, Listed, LoadBalancer, Service, Snapshot, UsageItem, Volume,
 };
@@ -125,16 +126,25 @@ pub fn collect(client: &Client, since: Date, today: Date) -> Result<Snapshot> {
         &format!("/20190111/budgets?compartmentId={t}&targetType=ALL"),
     )
     .map_err(|e| e.to_string());
-    let payment_model = list_all_items(
+    let subscriptions = list_all_items(
         &oci,
         "organizations",
         &format!("/20230401/subscriptions?compartmentId={t}"),
     )
-    .ok()
-    .and_then(|subs| {
-        subs.iter()
-            .find_map(|s| s["paymentModel"].as_str().map(str::to_owned))
-    });
+    .unwrap_or_default();
+    let payment_model = subscriptions
+        .iter()
+        .find_map(|s| s["paymentModel"].as_str().map(str::to_owned));
+    // Checked on a real account, 10 November 2026: startDate 2026-06-04, endDate 2026-07-03 —
+    // the trial — and paymentModel PAYG after the upgrade.
+    let trial_end = subscriptions
+        .iter()
+        .filter_map(|s| {
+            let start = s["startDate"].as_str().and_then(Date::parse)?;
+            let end = s["endDate"].as_str().and_then(Date::parse)?;
+            (end.to_days() - start.to_days() <= limits::TRIAL_MAX_DAYS).then_some(end)
+        })
+        .max();
 
     Ok(Snapshot {
         tenancy_name: tenancy["name"].as_str().unwrap_or("").to_owned(),
@@ -142,6 +152,7 @@ pub fn collect(client: &Client, since: Date, today: Date) -> Result<Snapshot> {
         home_region,
         regions,
         payment_model,
+        trial_end,
         instances,
         boot_volumes,
         block_volumes,

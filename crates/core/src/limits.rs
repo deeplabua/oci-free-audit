@@ -9,6 +9,9 @@ pub const CHECKED: &str = "2026-11-10";
 /// Oracle's list of Always Free resources.
 pub const SOURCE: &str = "https://docs.oracle.com/iaas/Content/FreeTier/resourceref.htm";
 
+/// The free trial lasts 30 days; a subscription period this short or shorter is the trial.
+pub const TRIAL_MAX_DAYS: i64 = 40;
+
 /// The Ampere A1 Flex shape.
 pub const A1_FLEX: &str = "VM.Standard.A1.Flex";
 

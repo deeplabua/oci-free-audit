@@ -18,6 +18,10 @@ pub struct Snapshot {
     pub regions: Vec<String>,
     /// `PAYG`, ... from the Organizations API; `None` if it could not be read.
     pub payment_model: Option<String>,
+    /// The 30-day free trial's last day, from the Organizations API: a subscription period of
+    /// at most 40 days (an annual contract also has an `endDate`, but a year long). Past or
+    /// future — the checks decide whether it is still running.
+    pub trial_end: Option<Date>,
     /// Instances, every subscribed region, all compartments.
     pub instances: Listed<Instance>,
     /// Boot volumes, every region.

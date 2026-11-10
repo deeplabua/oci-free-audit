@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0 — 2026-11-10
+
+- Free trial: while the 30-day trial runs, a TRIAL section shows the day it ends and every
+  resource that is not Always Free — stopped then, or billed if the account is already
+  pay-as-you-go. Cost during the trial is ⚠ (it goes to the trial credits), not ✗.
+- `--notify`: a desktop notification when the result changes — a new charge, a limit crossed,
+  or all free again; the last result is kept in the cache folder. `--webhook` for ntfy, Slack,
+  Discord or Telegram, `--no-desktop` for servers.
+- Colour: ✓ green, ⚠ yellow, ✗ red — only in a terminal; `--color always|never`, `NO_COLOR`.
+
 ## 0.2.3 — 2026-11-10
 
 - README: links to the other DeepLab OCI tools and the crate they share.

@@ -64,6 +64,7 @@ fn base() -> Snapshot {
         home_region: "eu-amsterdam-1".into(),
         regions: vec!["eu-amsterdam-1".into()],
         payment_model: Some("PAYG".into()),
+        trial_end: None,
         instances: Ok(vec![
             inst("micro", "VM.Standard.E2.1.Micro", "RUNNING", 1.0, 1.0),
             inst("arm", "VM.Standard.A1.Flex", "RUNNING", 2.0, 12.0),
@@ -552,4 +553,58 @@ fn private_vaults_are_billed() {
     let f = find(&run(&s), "Vaults").clone();
     assert_eq!(f.status, Status::Fail);
     assert_eq!(f.items, vec!["hsm in eu-amsterdam-1"]);
+}
+
+#[test]
+fn trial_running_everything_free() {
+    let mut s = base();
+    s.payment_model = Some("FREE_TIER".into());
+    s.trial_end = Some(d("2026-11-20"));
+    let r = run(&s);
+    assert_eq!(r.sections[0].title, "TRIAL");
+    let f = &r.sections[0].findings[0];
+    assert_eq!(f.status, Status::Ok);
+    assert!(
+        f.detail.contains("2026-11-20 (10 days left)"),
+        "{}",
+        f.detail
+    );
+    assert_eq!(r.trial_ends, Some(d("2026-11-20")));
+}
+
+#[test]
+fn trial_running_with_paid_resources_and_cost() {
+    let mut s = base();
+    s.payment_model = Some("FREE_TIER".into());
+    s.trial_end = Some(d("2026-11-11"));
+    if let Ok(instances) = &mut s.instances {
+        instances.push(inst("big", "VM.Standard.E4.Flex", "RUNNING", 2.0, 16.0));
+    }
+    s.usage = Ok(vec![usage("2026-11-05", "Compute", "E4 OCPU", 3.5, 48.0)]);
+    let r = run(&s);
+    let trial = &r.sections[0].findings[0];
+    assert_eq!(trial.status, Status::Warn);
+    assert!(trial.detail.contains("(1 day left)") && trial.detail.contains("stopped then"));
+    assert!(
+        trial.items.iter().any(|i| i.contains("big")),
+        "{:?}",
+        trial.items
+    );
+    // Cost goes to the trial credits: ⚠, not ✗.
+    let cost = r.sections.iter().find(|x| x.title == "COST").unwrap();
+    assert!(cost.findings.iter().all(|f| f.status != Status::Fail));
+    assert!(
+        cost.findings
+            .iter()
+            .any(|f| f.detail.contains("trial credits"))
+    );
+}
+
+#[test]
+fn trial_over_is_not_shown() {
+    let mut s = base();
+    s.trial_end = Some(d("2026-07-03"));
+    let r = run(&s);
+    assert!(r.sections.iter().all(|x| x.title != "TRIAL"));
+    assert_eq!(r.trial_ends, None);
 }

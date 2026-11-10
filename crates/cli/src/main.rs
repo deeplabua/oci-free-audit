@@ -32,6 +32,7 @@ fn stdout_failed(e: std::io::Error) -> ! {
     panic!("failed printing to stdout: {e}");
 }
 
+mod notify;
 mod output;
 mod update;
 
@@ -70,6 +71,24 @@ struct Args {
     /// Show the tenancy name and OCID instead of masking them.
     #[arg(long)]
     show_ids: bool,
+
+    /// Send a desktop notification when the result changes — a new charge, a limit crossed, or
+    /// all free again. Meant for a daily cron job.
+    #[arg(long)]
+    notify: bool,
+
+    /// Also POST the notification to this URL (implies --notify): ntfy, Slack, Discord, Telegram
+    /// sendMessage, or any endpoint that takes JSON {"text": "..."}.
+    #[arg(long, env = "OCI_FREE_AUDIT_WEBHOOK", value_name = "URL")]
+    webhook: Option<String>,
+
+    /// With --notify: only the webhook, no desktop notification (for servers).
+    #[arg(long)]
+    no_desktop: bool,
+
+    /// Colour: auto (only in a terminal, off with NO_COLOR), always, never.
+    #[arg(long, default_value = "auto", value_name = "WHEN")]
+    color: output::ColorChoice,
 
     /// OCI config file [default: ~/.oci/config].
     #[arg(long, env = "OCI_CONFIG_FILE", value_name = "FILE")]
@@ -134,6 +153,7 @@ fn run(args: &Args) -> Result<u8> {
         .endpoint(std::env::var("OCI_FREE_AUDIT_ENDPOINT").ok())
         .build()?;
 
+    let client_tenancy = client.tenancy().to_owned();
     let snapshot = api::collect(&client, since, today)?;
     let report = audit(&snapshot, &Options { a1_limit });
     let report = if args.show_ids {
@@ -144,7 +164,16 @@ fn run(args: &Args) -> Result<u8> {
     if args.json {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
-        print!("{}", output::text(&report));
+        print!("{}", output::text(&report, args.color.enabled()));
+    }
+    if args.notify || args.webhook.is_some() {
+        notify::on_change(
+            &report,
+            &client_tenancy,
+            &args.profile,
+            args.webhook.as_deref(),
+            !args.no_desktop,
+        );
     }
     Ok(report.exit_code())
 }

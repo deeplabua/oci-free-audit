@@ -8,7 +8,9 @@ It does not check signatures. Not for anything but demos.
     python3 assets/demo/mock-oci.py 8797
 """
 
+import datetime
 import json
+import os
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -58,7 +60,12 @@ GET = {
     "/n/acmens/b/": [{"name": "backups"}],
     "/n/acmens/b/backups": {"name": "backups", "storageTier": "Standard", "approximateSize": 1_800_000_000},
     "/20190111/budgets": [],
-    "/20230401/subscriptions": {"items": [{"paymentModel": "PAYG"}]},
+    # MOCK_TRIAL=1: a new account, 30-day trial ending in 12 days.
+    "/20230401/subscriptions": {"items": [
+        {"paymentModel": "FREE_TIER",
+         "startDate": (datetime.date.today() - datetime.timedelta(days=18)).isoformat() + "T00:00:00.000Z",
+         "endDate": (datetime.date.today() + datetime.timedelta(days=12)).isoformat() + "T23:59:59.000Z"}
+    ] if os.environ.get("MOCK_TRIAL") else [{"paymentModel": "PAYG"}]},
 }
 
 

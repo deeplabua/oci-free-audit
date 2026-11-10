@@ -115,7 +115,37 @@ oci-free-audit --profile OTHER
 ```
 
 Exit codes: `0` all free, `1` warnings, `2` a charge or a limit exceeded, `3` could not run
-(arguments, config, key, network). Put it in cron and alert on non-zero.
+(arguments, config, key, network).
+
+Colour is on in a terminal and off in pipes, files and with `NO_COLOR`; `--color always` or
+`--color never` decide for you.
+
+### Notifications
+
+`--notify` sends a desktop notification when the result changes — a new charge, a limit crossed,
+or all free again. The last result is kept in your cache folder, so a daily run says something
+only when there is something new:
+
+```sh
+oci-free-audit --notify
+```
+
+`--webhook` posts the same text to ntfy, Slack, Discord, Telegram (`sendMessage`), or anything that
+takes JSON `{"text": "..."}`. On a server, skip the desktop:
+
+```sh
+oci-free-audit --webhook https://ntfy.sh/your-secret-topic --no-desktop
+```
+
+Once a day from cron:
+
+```sh
+crontab -e
+```
+
+```
+0 9 * * * /usr/local/bin/oci-free-audit --webhook https://ntfy.sh/your-secret-topic --no-desktop > /dev/null
+```
 
 The tenancy name and OCID are masked by default, so the report is safe to paste into an issue
 or a forum post.
@@ -127,6 +157,7 @@ Limits as of 10 November 2026, from
 
 | Area | Rule |
 |---|---|
+| Free trial | while it runs: the day it ends, and what is not Always Free — stopped then (or billed on PAYG) → ⚠; cost goes to the trial credits → ⚠ |
 | Cost | any non-zero cost in the Usage API, per month, by service → ✗ |
 | Outbound data | ≤ 10 TB per month (⚠ above 80 %) |
 | Compute shapes | only `VM.Standard.A1.Flex` and `VM.Standard.E2.1.Micro` are free; anything else running → ✗ |
@@ -164,7 +195,7 @@ instead. Add `Allow group <your-group> to read instances in tenancy` to see inst
 ## Not yet
 
 Vault key versions and secrets counts, Email Delivery and Notifications volumes, the 50,000
-Object Storage requests a month, the trial period, notifications. See [`CHANGELOG.md`](CHANGELOG.md).
+Object Storage requests a month. See [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Support
 

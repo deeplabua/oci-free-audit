@@ -49,6 +49,11 @@ pub fn audit(s: &Snapshot, opts: &Options) -> Report {
             findings: safety_net(s),
         },
     ];
+    let mut sections = sections;
+    let trial_ends = s.trial_end.filter(|end| *end >= s.today);
+    if let Some(end) = trial_ends {
+        trial(s, end, &mut sections);
+    }
     let result = sections
         .iter()
         .flat_map(|sec| &sec.findings)
@@ -60,6 +65,7 @@ pub fn audit(s: &Snapshot, opts: &Options) -> Report {
         tenancy_id: s.tenancy_id.clone(),
         home_region: s.home_region.clone(),
         payment_model: s.payment_model.clone(),
+        trial_ends,
         limits_as_of: limits::CHECKED,
         since: s.since,
         today: s.today,
@@ -675,4 +681,70 @@ fn plural(n: usize, word: &str) -> String {
     } else {
         format!("{n} {word}s")
     }
+}
+
+/// §5.4: while the free trial runs, cost goes to the trial credits (⚠, not ✗), and anything not
+/// Always Free is stopped when it ends — unless the account already moved to pay-as-you-go,
+/// where it is billed instead.
+fn trial(s: &Snapshot, end: Date, sections: &mut Vec<Section>) {
+    for f in sections
+        .iter_mut()
+        .filter(|sec| sec.title == "COST")
+        .flat_map(|sec| sec.findings.iter_mut())
+        .filter(|f| f.status == Status::Fail && f.label != "Outbound data this month")
+    {
+        f.status = Status::Warn;
+        f.detail = format!("{} — charged to the trial credits", f.detail);
+    }
+    let not_free: Vec<String> = sections
+        .iter()
+        .filter(|sec| {
+            matches!(
+                sec.title.as_str(),
+                "COMPUTE" | "STORAGE" | "DATABASES" | "NETWORK" | "SECURITY"
+            )
+        })
+        .flat_map(|sec| &sec.findings)
+        .filter(|f| f.status == Status::Fail)
+        .map(|f| format!("{}: {}", f.label, f.detail))
+        .collect();
+    let days = end.to_days() - s.today.to_days();
+    let when = format!(
+        "{end} ({days} day{} left)",
+        if days == 1 { "" } else { "s" }
+    );
+    let payg = s.payment_model.as_deref() == Some("PAYG");
+    let finding = match (not_free.is_empty(), payg) {
+        (true, false) => Finding::new(
+            Status::Ok,
+            "Free trial ends",
+            format!("{when} — everything here is Always Free, nothing will be stopped"),
+        ),
+        (true, true) => Finding::new(
+            Status::Ok,
+            "Trial credits until",
+            format!("{when} — already pay-as-you-go, and everything here is Always Free"),
+        ),
+        (false, false) => Finding::new(
+            Status::Warn,
+            "Free trial ends",
+            format!(
+                "{when} — these are not Always Free: stopped then and deleted later, unless you upgrade to pay-as-you-go"
+            ),
+        )
+        .with_items(not_free),
+        (false, true) => Finding::new(
+            Status::Warn,
+            "Trial credits until",
+            format!("{when} — after that these are billed to your card"),
+        )
+        .with_items(not_free),
+    };
+    sections.insert(
+        0,
+        Section {
+            title: "TRIAL".into(),
+            findings: vec![finding],
+        },
+    );
 }
