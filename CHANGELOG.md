@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.3 — 2026-11-10
+
+- README: links to the other DeepLab OCI tools and the crate they share.
+- README: install with Homebrew, the installer scripts or `cargo install`; how updating works.
+- Output into a closed pipe (`… | head -1`) ends quietly with exit code 141 instead of a panic.
+
 ## 0.2.2 — 2026-11-10
 
 - Update notice: at most once a day the binary checks GitHub for a newer release and

@@ -14,9 +14,10 @@ One binary, no OCI CLI, no Python. It reads your account, compares every resourc
 Always Free allowance, looks at the real cost in Oracle's Usage API, and prints ✓ / ⚠ / ✗.
 **It never changes anything in the account.**
 
-Part of [DeepLab](https://deeplab.tools) — small, sharp tools that run locally. A sibling of
-[oci-arm-catcher](https://github.com/deeplabua/oci-arm-catcher): catch a free ARM instance,
-then make sure it stays free.
+Part of [DeepLab](https://deeplab.tools) — small, sharp tools that run locally. Siblings:
+[oci-arm-catcher](https://github.com/deeplabua/oci-arm-catcher) catches a free ARM instance,
+[oci-free-keeper](https://github.com/deeplabua/oci-free-keeper) keeps it — and this one makes sure it
+stays free. Built on [oci-request-signer](https://github.com/deeplabua/oci-request-signer).
 
 ![oci-free-audit on a made-up PAYG tenancy: everything free, one warning — no budget alert](assets/demo.gif)
 
@@ -36,14 +37,44 @@ the inventory says. Between 2/12 and 4/24 of A1 it lets your own bill decide.
 
 ## Install
 
-Not released yet. From source:
+One self-contained binary for macOS, Linux and Windows. It talks to the OCI API directly —
+**no OCI CLI and no Python needed**. Pick one:
 
-```sh
-cargo install --git https://github.com/deeplabua/oci-free-audit oci-free-audit
+**macOS / Linux — Homebrew**
+
+```bash
+brew install deeplabua/tap/oci-free-audit
 ```
+
+**macOS / Linux — installer script**
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/deeplabua/oci-free-audit/releases/latest/download/oci-free-audit-installer.sh | sh
+```
+
+**Windows — PowerShell**
+
+```powershell
+powershell -c "irm https://github.com/deeplabua/oci-free-audit/releases/latest/download/oci-free-audit-installer.ps1 | iex"
+```
+
+**Any platform — from source** (needs [Rust](https://rustup.rs))
+
+```bash
+cargo install oci-free-audit
+```
+
+Or download an archive for your platform from
+[Releases](https://github.com/deeplabua/oci-free-audit/releases).
 
 It uses the API key in `~/.oci/config` — the same one the OCI CLI and
 [oci-arm-catcher](https://github.com/deeplabua/oci-arm-catcher) use.
+
+**Updating.** Run the same install command again, or
+`brew upgrade deeplabua/tap/oci-free-audit`. You don't have to watch for releases: at most once a
+day the binary asks GitHub for the latest version and, if there is a newer one, prints a short
+notice with the command to run (on stderr, so `--json` stays clean). It's off in CI and when stderr isn't a terminal; set
+`OCI_FREE_AUDIT_NO_UPDATE_CHECK=1` to turn it off entirely.
 
 ## Use
 

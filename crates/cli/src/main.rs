@@ -3,6 +3,35 @@
 //!
 //! Exit codes: 0 all free, 1 warnings, 2 charges or a limit exceeded, 3 could not run.
 
+/// `println!` / `print!` that exit quietly when stdout is a closed pipe (`… | head -1`),
+/// the way `cat` and `grep` do, instead of panicking. Declared before the modules so it
+/// shadows the std macros everywhere in the binary.
+macro_rules! println {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        if let Err(e) = writeln!(std::io::stdout(), $($arg)*) {
+            crate::stdout_failed(e);
+        }
+    }};
+}
+macro_rules! print {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        if let Err(e) = write!(std::io::stdout(), $($arg)*) {
+            crate::stdout_failed(e);
+        }
+    }};
+}
+
+/// A failed write to stdout: a closed pipe ends the program quietly with 141 (128 + SIGPIPE,
+/// what a shell reports for a tool killed by SIGPIPE); anything else is a real error.
+fn stdout_failed(e: std::io::Error) -> ! {
+    if e.kind() == std::io::ErrorKind::BrokenPipe {
+        std::process::exit(141);
+    }
+    panic!("failed printing to stdout: {e}");
+}
+
 mod output;
 mod update;
 
