@@ -268,18 +268,20 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "oci-free-audit"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "clap",
+ "dirs",
  "oci-free-audit-core",
  "oci-request-signer",
  "serde_json",
+ "ureq",
 ]
 
 [[package]]
 name = "oci-free-audit-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "oci-request-signer",
  "serde",

@@ -3,7 +3,7 @@ members = ["crates/cli", "crates/core"]
 resolver = "3"
 
 [workspace.package]
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 rust-version = "1.92"
 license = "MIT"
@@ -12,14 +12,17 @@ homepage = "https://deeplab.tools"
 
 # Every dependency here must be permissive (MIT/Apache-2.0/BSD/ISC/MPL/Zlib).
 [workspace.dependencies]
-oci-free-audit-core = { version = "0.2.1", path = "crates/core" }
+oci-free-audit-core = { version = "0.2.2", path = "crates/core" }
 anyhow = "1.0"                                                   # MIT OR Apache-2.0
 clap = { version = "4.6", features = ["derive", "env", "wrap_help"] }  # MIT OR Apache-2.0
 # ~/.oci/config, request signing and the HTTP client, shared with oci-arm-catcher and
 # oci-free-keeper. 0.1.1+: on_domain() for the Usage API, Organizations and Budgets.
 oci-request-signer = "0.1.1"                                     # MIT
+dirs = "6.0"                                                     # MIT OR Apache-2.0
 serde = { version = "1.0", features = ["derive"] }               # MIT OR Apache-2.0
 serde_json = "1.0"                                               # MIT OR Apache-2.0
+# rustls + ring, no C toolchain and no OpenSSL; already in the graph through oci-request-signer.
+ureq = { version = "3.3", default-features = false, features = ["rustls"] }  # MIT OR Apache-2.0
 thiserror = "2.0"                                                # MIT OR Apache-2.0
 
 [profile.release]

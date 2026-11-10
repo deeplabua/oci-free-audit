@@ -4,6 +4,7 @@
 //! Exit codes: 0 all free, 1 warnings, 2 charges or a limit exceeded, 3 could not run.
 
 mod output;
+mod update;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -64,13 +65,16 @@ fn main() -> ExitCode {
             };
         }
     };
-    match run(&args) {
+    let mut update = update::UpdateCheck::start();
+    let code = match run(&args) {
         Ok(code) => ExitCode::from(code),
         Err(e) => {
             eprintln!("error: {e:#}");
             ExitCode::from(CANNOT_RUN)
         }
-    }
+    };
+    update.report(std::time::Duration::from_millis(1500));
+    code
 }
 
 fn run(args: &Args) -> Result<u8> {
