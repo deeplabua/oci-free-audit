@@ -376,3 +376,46 @@ impl LoadBalancer {
         }
     }
 }
+
+/// A paid account — pay-as-you-go or a commitment — by the Organizations API's `paymentModel`.
+///
+/// The field is free text, not an enum: Oracle's SDK describes it as "such as 'Pay as you go' or
+/// 'Monthly'", and a pay-as-you-go tenancy answered `PAYG` (10 November 2026). What an account
+/// with only Always Free answers is not known; anything unrecognised counts as not paid, which
+/// applies the stricter Always Free limits.
+pub fn is_paid(payment_model: Option<&str>) -> bool {
+    let Some(model) = payment_model else {
+        return false;
+    };
+    let m = model.to_ascii_lowercase().replace(['-', '_'], " ");
+    [
+        "payg",
+        "pay as you go",
+        "monthly",
+        "annual",
+        "universal credit",
+    ]
+    .iter()
+    .any(|k| m.contains(k))
+}
+
+#[cfg(test)]
+mod paid_tests {
+    use super::is_paid;
+
+    #[test]
+    fn paid_accounts_by_payment_model() {
+        for paid in [
+            "PAYG",
+            "Pay as you go",
+            "PAY_AS_YOU_GO",
+            "Monthly",
+            "Annual Universal Credits",
+        ] {
+            assert!(is_paid(Some(paid)), "{paid}");
+        }
+        for free in [None, Some(""), Some("FREE"), Some("Free Tier")] {
+            assert!(!is_paid(free), "{free:?}");
+        }
+    }
+}

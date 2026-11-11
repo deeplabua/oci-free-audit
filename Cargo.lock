@@ -481,7 +481,7 @@ dependencies = [
 
 [[package]]
 name = "oci-free-audit"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -495,7 +495,7 @@ dependencies = [
 
 [[package]]
 name = "oci-free-audit-core"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "oci-request-signer",
  "serde",
@@ -505,9 +505,9 @@ dependencies = [
 
 [[package]]
 name = "oci-request-signer"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0de4ef6748be79091c4feb65da1dbee640a257847555f832b6cfcfc98f81cac"
+checksum = "69ac8199b36416c4fc31241f7ef8e4196adcb89a57c099cac79b1e328f5ef3aa"
 dependencies = [
  "base64 0.22.1",
  "dirs",

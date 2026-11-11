@@ -411,7 +411,8 @@ fn storage(s: &Snapshot) -> Vec<Finding> {
     out
 }
 
-/// Object Storage: 20 GB on an Always Free account; 10 GB each of Standard and Archive on PAYG.
+/// Object Storage: 20 GB on an Always Free account; 10 GB each of Standard and Archive on a paid account
+/// (pay-as-you-go or a commitment, see [`crate::model::is_paid`]).
 fn object_storage(s: &Snapshot) -> Finding {
     let label = "Object Storage";
     let buckets = match &s.buckets {
@@ -455,7 +456,7 @@ fn object_storage(s: &Snapshot) -> Finding {
             Status::Ok
         }
     };
-    if s.payment_model.as_deref() == Some("PAYG") {
+    if crate::model::is_paid(s.payment_model.as_deref()) {
         let (std, arch) = (gb(Some("Standard")), gb(Some("Archive")));
         let lim = limits::OBJECT_STORAGE_PAYG_GB_PER_TIER;
         Finding::new(
@@ -575,14 +576,14 @@ fn network(s: &Snapshot) -> Vec<Finding> {
         Err(e) => out.push(Finding::unknown("VCNs", e)),
         Ok(list) => {
             let n = list.iter().filter(|v| v.exists()).count();
-            let payg = s.payment_model.as_deref() == Some("PAYG");
+            let payg = crate::model::is_paid(s.payment_model.as_deref());
             let status = if !payg && n > limits::VCN_MAX {
                 Status::Warn
             } else {
                 Status::Ok
             };
             let detail = if payg {
-                format!("{n} (no Always Free cap on PAYG)")
+                format!("{n} (no Always Free cap on a paid account)")
             } else {
                 format!("{n} of {}", limits::VCN_MAX)
             };
@@ -791,7 +792,7 @@ fn trial(s: &Snapshot, end: Date, sections: &mut Vec<Section>) {
         "{end} ({days} day{} left)",
         if days == 1 { "" } else { "s" }
     );
-    let payg = s.payment_model.as_deref() == Some("PAYG");
+    let payg = crate::model::is_paid(s.payment_model.as_deref());
     let finding = match (not_free.is_empty(), payg) {
         (true, false) => Finding::new(
             Status::Ok,

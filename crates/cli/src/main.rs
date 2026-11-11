@@ -97,6 +97,22 @@ struct Args {
     /// Profile in the OCI config file.
     #[arg(long, env = "OCI_CLI_PROFILE", default_value = "DEFAULT")]
     profile: String,
+
+    /// How to sign: an API key from the OCI config, or as the OCI instance the audit runs on
+    /// (instance_principal: no key on disk; needs a dynamic group and a policy, see README).
+    #[arg(long, env = "OCI_CLI_AUTH", value_enum, default_value = "api_key")]
+    auth: Auth,
+}
+
+/// `--auth`, named as the OCI CLI names them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum Auth {
+    /// An API key from the OCI config file.
+    #[value(name = "api_key")]
+    ApiKey,
+    /// The OCI instance the audit runs on.
+    #[value(name = "instance_principal")]
+    InstancePrincipal,
 }
 
 fn main() -> ExitCode {
@@ -140,20 +156,18 @@ fn run(args: &Args) -> Result<u8> {
         None => None,
     };
 
-    let path = match &args.oci_config {
-        Some(p) => p.clone(),
-        None => {
-            Profile::default_path().context("cannot find your home directory; pass --oci-config")?
+    let client = match args.auth {
+        Auth::InstancePrincipal => configure(Client::instance_principal()).build()?,
+        Auth::ApiKey => {
+            let path = match &args.oci_config {
+                Some(p) => p.clone(),
+                None => Profile::default_path()
+                    .context("cannot find your home directory; pass --oci-config")?,
+            };
+            let profile = Profile::load(&path, &args.profile)?;
+            configure(Client::builder(&profile)).build()?
         }
     };
-    let profile = Profile::load(&path, &args.profile)?;
-    let client = Client::builder(&profile)
-        .user_agent(concat!("oci-free-audit/", env!("CARGO_PKG_VERSION")))
-        // Oracle throttles bursts of list requests; wait and retry instead of failing the run.
-        .retry_throttled(3)
-        // A local mock of the OCI API for tests and demos.
-        .endpoint(std::env::var("OCI_FREE_AUDIT_ENDPOINT").ok())
-        .build()?;
 
     let client_tenancy = client.tenancy().to_owned();
     let snapshot = api::collect(&client, since, today)?;
@@ -172,10 +186,23 @@ fn run(args: &Args) -> Result<u8> {
         notify::on_change(
             &report,
             &client_tenancy,
-            &args.profile,
+            // The state file is per signer: the profile, or the instance.
+            match args.auth {
+                Auth::ApiKey => &args.profile,
+                Auth::InstancePrincipal => "instance-principal",
+            },
             args.webhook.as_deref(),
             !args.no_desktop,
         );
     }
     Ok(report.exit_code())
+}
+
+/// What every client of the audit's has, however it signs.
+fn configure(b: oci_request_signer::ClientBuilder<'_>) -> oci_request_signer::ClientBuilder<'_> {
+    b.user_agent(concat!("oci-free-audit/", env!("CARGO_PKG_VERSION")))
+        // Oracle throttles bursts of list requests; wait and retry instead of failing the run.
+        .retry_throttled(3)
+        // A local mock of the OCI API for tests and demos.
+        .endpoint(std::env::var("OCI_FREE_AUDIT_ENDPOINT").ok())
 }

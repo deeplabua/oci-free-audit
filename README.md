@@ -166,12 +166,12 @@ Limits as of 10 November 2026, from
 | Regions | compute and block volumes outside the home region → ✗ (never free there) |
 | Block storage | boot + block volumes ≤ 200 GB in the home region (⚠ from 90 %) |
 | Volume backups | boot + block ≤ 5 (⚠ at 5: no room left) |
-| Object Storage | ≤ 20 GB on an Always Free account; ≤ 10 GB each of Standard and Archive on PAYG |
+| Object Storage | ≤ 20 GB on an Always Free account; ≤ 10 GB each of Standard and Archive on a paid account (PAYG or a commitment) |
 | Autonomous Database | ≤ 2 with `isFreeTier`; any other running → ✗, stopped → ⚠ (storage billed) |
 | MySQL HeatWave | ≤ 1 `MySQL.Free`; any other shape running → ✗ |
 | Load balancer | ≤ 1 flexible at 10 Mbit/s; any other shape → ✗ |
 | Network load balancer | ≤ 1 (⚠ above) |
-| VCN | ≤ 2 on an Always Free account (⚠ above); no cap on PAYG |
+| VCN | ≤ 2 on an Always Free account (⚠ above); no cap on a paid account |
 | Vault | virtual vaults are free; a virtual private vault → ✗; HSM key versions ≤ 20 and secrets ≤ 150 across all vaults (software keys are free) |
 | Monthly | this month's Object Storage requests ≤ 50,000, Email Delivery ≤ 3,000 emails, Notifications ≤ 1,000,000 HTTPS and ≤ 1,000 email deliveries (⚠ from 80 %) |
 | Budget | a budget with an alert rule exists — otherwise ⚠ and how to create one |
@@ -194,9 +194,35 @@ instead. Add `Allow group <your-group> to read instances in tenancy` to see inst
 `Allow group <your-group> to read buckets in tenancy` for Object Storage sizes. Vault keys and
 secrets are only counted, never read — `inspect all-resources` covers them.
 
+### On an OCI instance, without an API key
+
+The audit can run on one of your instances — from cron, say — signing as that instance (an
+*instance principal*): no OCI config and no API key on the machine. Create a dynamic group that
+matches the instance, e.g. `ANY {instance.id = '<instance OCID>'}`, and give it the same policies
+with `dynamic-group` in place of `group`:
+
+```
+Allow dynamic-group <your-dynamic-group> to inspect all-resources in tenancy
+```
+
+```
+Allow dynamic-group <your-dynamic-group> to read usage-report in tenancy
+```
+
+Then, on the instance:
+
+```sh
+oci-free-audit --auth instance_principal
+```
+
+`OCI_CLI_AUTH=instance_principal` does the same, as it does for the OCI CLI. A new policy can take
+a few minutes to reach every service; until then some lines show "could not check".
+
 ## Not yet
 
-Retrying when OCI throttles a large tenancy (HTTP 429). See [`CHANGELOG.md`](CHANGELOG.md).
+Live data for Vault key versions and for the monthly Email Delivery, Notifications and Object
+Storage request counts: the paths and SKU names follow Oracle's documentation but have not met a
+tenancy that uses them yet. See [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Support
 

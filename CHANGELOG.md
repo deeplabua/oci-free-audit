@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0 — 2026-11-11
+
+- `--auth instance_principal` (or `OCI_CLI_AUTH=instance_principal`): run on an OCI instance and sign
+  as it — no OCI config or API key on the machine. Needs a dynamic group and policies (README).
+  Built on oci-request-signer 0.3.
+- A paid account is recognised whatever Oracle calls it — `PAYG`, "Pay as you go", "Monthly",
+  Universal Credits — not only `PAYG`, so a commitment account gets the paid Object Storage and VCN
+  limits instead of the stricter Always Free ones.
+
 ## 0.4.1 — 2026-11-11
 
 - When Oracle throttles requests (429), the audit waits as Oracle asks and retries up to

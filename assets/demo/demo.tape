@@ -6,7 +6,7 @@ Output assets/demo.gif
 Set Shell bash
 Set FontSize 16
 Set Width 1360
-Set Height 800
+Set Height 960
 Set Padding 28
 Set WindowBar Colorful
 Set WindowBarSize 44

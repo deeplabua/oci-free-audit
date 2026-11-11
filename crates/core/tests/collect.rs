@@ -93,8 +93,51 @@ fn route(method: &str, path: &str) -> (u16, Vec<(&'static str, &'static str)>, S
     }
 }
 
+type Route = fn(&str, &str) -> (u16, Vec<(&'static str, &'static str)>, String);
+
+/// Two regions: the endpoint is `<mock>/{region}`, so every path starts with the region.
+/// Amsterdam (home) is the account above, subscribed to Frankfurt too; Frankfurt has one more A1
+/// instance and a large boot volume, so the totals cross the free limits only when both count.
+fn two_regions(method: &str, path: &str) -> (u16, Vec<(&'static str, &'static str)>, String) {
+    let ok = |body: &str| (200, vec![], body.to_owned());
+    let (region, rest) = path[1..].split_once('/').unwrap();
+    let rest = format!("/{rest}");
+    let p = rest.split('?').next().unwrap();
+    match (region, method, p) {
+        (
+            "eu-amsterdam-1",
+            "GET",
+            "/20160918/tenancies/ocid1.tenancy.oc1..t/regionSubscriptions",
+        ) => ok(
+            r#"[{"regionName":"eu-amsterdam-1","isHomeRegion":true,"status":"READY"},
+                {"regionName":"eu-frankfurt-1","isHomeRegion":false,"status":"READY"}]"#,
+        ),
+        ("eu-amsterdam-1", _, _) => route(method, &rest),
+        ("eu-frankfurt-1", "GET", "/20160918/instances") if !rest.contains("..c1") => ok(
+            r#"[{"id":"ocid1.instance.oc1.eu-frankfurt-1.fra","displayName":"fra","shape":"VM.Standard.A1.Flex",
+                 "lifecycleState":"RUNNING","shapeConfig":{"ocpus":2.0,"memoryInGBs":12.0}}]"#,
+        ),
+        ("eu-frankfurt-1", "GET", "/20160918/availabilityDomains") => {
+            ok(r#"[{"name":"Abcd:EU-FRANKFURT-1-AD-1"}]"#)
+        }
+        ("eu-frankfurt-1", "GET", "/20160918/bootVolumes") if !rest.contains("..c1") => ok(
+            r#"[{"id":"ocid1.bootvolume.oc1.eu-frankfurt-1.f","displayName":"fra (Boot Volume)","sizeInGBs":120,
+                 "lifecycleState":"AVAILABLE"}]"#,
+        ),
+        ("eu-frankfurt-1", "GET", "/n/") => ok(r#""acmens""#),
+        ("eu-frankfurt-1", "GET", "/20200501/networkLoadBalancers") => ok(r#"{"items":[]}"#),
+        // Everything else in Frankfurt is empty.
+        ("eu-frankfurt-1", "GET", _) => ok("[]"),
+        _ => (
+            404,
+            vec![],
+            format!(r#"{{"code":"NotFound","message":"no mock for {method} {path}"}}"#),
+        ),
+    }
+}
+
 /// Serve `route` until the test ends; return the base URL and the requests seen.
-fn mock() -> (String, Arc<Mutex<Vec<String>>>) {
+fn mock(route: Route) -> (String, Arc<Mutex<Vec<String>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let seen = Arc::new(Mutex::new(Vec::new()));
@@ -149,7 +192,13 @@ fn mock() -> (String, Arc<Mutex<Vec<String>>>) {
 }
 
 fn snapshot() -> (Snapshot, Vec<String>) {
-    let (base, seen) = mock();
+    snapshot_of(route, "")
+}
+
+/// Collect against `route`, with `suffix` (e.g. `/{region}`) after the mock's address.
+fn snapshot_of(route: Route, suffix: &str) -> (Snapshot, Vec<String>) {
+    let (base, seen) = mock(route);
+    let base = format!("{base}{suffix}");
     let profile = Profile {
         user: "ocid1.user.oc1..u".into(),
         fingerprint: "aa:bb".into(),
@@ -241,4 +290,54 @@ fn the_report_for_the_mock_account() {
         .unwrap();
     assert_eq!(adb.detail, "1 of 2");
     assert_eq!(r.exit_code(), 1);
+}
+
+#[test]
+fn every_subscribed_region_counts() {
+    let (s, seen) = snapshot_of(two_regions, "/{region}");
+    assert_eq!(s.regions, ["eu-amsterdam-1", "eu-frankfurt-1"]);
+    let instances = s.instances.as_ref().unwrap();
+    assert_eq!(instances.len(), 3);
+    let fra = instances.iter().find(|i| i.name() == "fra").unwrap();
+    assert_eq!(fra.region, "eu-frankfurt-1");
+    let boot = s.boot_volumes.as_ref().unwrap();
+    assert_eq!(
+        boot.iter().filter(|v| v.region == "eu-frankfurt-1").count(),
+        1
+    );
+    // Identity and the Usage API only in the home region.
+    assert!(
+        seen.iter()
+            .filter(|r| r.contains("/regionSubscriptions") || r.contains("/20200107/usage"))
+            .all(|r| r.contains(" /eu-amsterdam-1/")),
+        "{seen:#?}"
+    );
+
+    let r = audit(&s, &Options::default());
+    let all: Vec<_> = r.sections.iter().flat_map(|s| &s.findings).collect();
+    // Compute is free only in the home region: the Frankfurt A1 is its own ✗, not part of the
+    // free A1 total, and its boot volume is billed.
+    let fra = all
+        .iter()
+        .find(|f| f.detail.contains("in eu-frankfurt-1"))
+        .unwrap_or_else(|| panic!("{all:#?}"));
+    assert_eq!(fra.status, Status::Fail, "{fra:?}");
+    assert!(
+        fra.detail.contains("free only in the home region"),
+        "{fra:?}"
+    );
+    let a1 = all.iter().find(|f| f.label == "A1.Flex total").unwrap();
+    assert!(a1.detail.starts_with("4 OCPU / 24 GB"), "{a1:?}");
+    let away = all
+        .iter()
+        .find(|f| f.label == "Volumes outside the home region")
+        .unwrap_or_else(|| panic!("{all:#?}"));
+    assert_ne!(away.status, Status::Ok);
+    assert!(
+        away.items
+            .iter()
+            .any(|i| i.contains("120 GB in eu-frankfurt-1")),
+        "{away:?}"
+    );
+    assert_eq!(r.exit_code(), 2);
 }
