@@ -372,46 +372,14 @@ fn usage(client: &Client, tenancy: &str, since: Date, today: Date) -> Listed<Usa
     }
 }
 
-/// GET a list, following `opc-next-page`. The answer is a JSON array.
+/// GET a list, following `opc-next-page`. The answer is a JSON array or `{"items": [...]}`.
 fn list_all<T: DeserializeOwned>(client: &Client, service: &str, path: &str) -> Result<Vec<T>> {
-    pages(client, service, path, |v| {
-        serde_json::from_value::<Vec<T>>(v)
-    })
+    client.list(service, path)
 }
 
 /// GET a list whose answer is `{"items": [...]}`.
 fn list_all_items(client: &Client, service: &str, path: &str) -> Result<Vec<Value>> {
-    pages(client, service, path, |v| {
-        serde_json::from_value::<Vec<Value>>(
-            v.get("items").cloned().unwrap_or(Value::Array(vec![])),
-        )
-    })
-}
-
-fn pages<T>(
-    client: &Client,
-    service: &str,
-    path: &str,
-    decode: impl Fn(Value) -> serde_json::Result<Vec<T>>,
-) -> Result<Vec<T>> {
-    let mut all = Vec::new();
-    let mut page: Option<String> = None;
-    loop {
-        let sep = if path.contains('?') { '&' } else { '?' };
-        let url = match &page {
-            Some(p) => format!("{path}{sep}page={}", encode(p)),
-            None => path.to_owned(),
-        };
-        let resp = client.request(Method::Get, service, &url, None, &[])?;
-        let v: Value = resp.json()?;
-        all.extend(decode(v).map_err(|e| {
-            oci_request_signer::Error::Transport(format!("unexpected response from {service}: {e}"))
-        })?);
-        match resp.header("opc-next-page") {
-            Some(next) if !next.is_empty() => page = Some(next.to_owned()),
-            _ => return Ok(all),
-        }
-    }
+    client.list(service, path)
 }
 
 fn parse<T: DeserializeOwned>(values: Vec<Value>) -> Listed<T> {

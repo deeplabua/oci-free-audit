@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1 — 2026-11-11
+
+- When Oracle throttles requests (429), the audit waits as Oracle asks and retries up to
+  3 times instead of failing. Built on oci-request-signer 0.2.
+
 ## 0.4.0 — 2026-11-10
 
 - Vault: HSM-protected key versions (≤ 20) and secrets (≤ 150) are counted across every vault,
